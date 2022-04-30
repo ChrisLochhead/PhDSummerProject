@@ -1,0 +1,3 @@
+#!/bin/sh
+workon Chris_Summer
+python main.py

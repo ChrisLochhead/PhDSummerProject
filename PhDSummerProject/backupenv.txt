@@ -1,0 +1,39 @@
+Backup how to make phd environment from scratch
+
+conda create -n phd python=3.6 ipython
+
+pip install pyrealsense2
+pip install opencv-python
+pip install torch
+pip install pandas
+pip install requests
+pip install pillow
+pip install tqdm
+pip install torchvision
+pip install pyyaml
+pip install matplotlib
+pip install pynput
+pip install scikit-image
+
+now it'll compile
+conda create -n phd3.7 python=3.7 ipython
+
+pip install cython
+pip install tensorflow==1.13.1
+pip install keras==2.0.8
+pip install h5py==2.10.0
+pip install imgaug
+pip install ipython[all]
+pip install pyrealsense2
+pip install torch==1.7.0+cpu torchvision==0.8.1+cpu torchaudio===0.7.0 -f https://download.pytorch.org/whl/torch_stable.html
+
+
+#Reference for this library 
+@misc{matterport_maskrcnn_2017,
+  title={Mask R-CNN for object detection and instance segmentation on Keras and TensorFlow},
+  author={Waleed Abdulla},
+  year={2017},
+  publisher={Github},
+  journal={GitHub repository},
+  howpublished={\url{https://github.com/matterport/Mask_RCNN}},
+}
