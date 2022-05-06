@@ -223,6 +223,7 @@ def get_silhouettes(path, verbose = 0, HOG = False):
     processed_images = []
     for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
         dirs.sort(key=numericalSort)
+        print("printing iterator: ", iterator, subdir)
         if len(files) > 0:
             raw_images = []
             processed_instances = []
@@ -243,7 +244,7 @@ def get_silhouettes(path, verbose = 0, HOG = False):
                 if HOG == False:
                     processed_instances.append(process_image(gray_img, raw_images[file_iter], verbose, subtractor))
                 else:
-                    #print("processing folder: ", iterator, ": ", file_iter)
+                    print("processing folder: ", iterator, ": ", file_iter)
                     processed_instances.append(process_HOG_image(get_HOG_image(gray_img), gray_img, HOG_background, verbose, subtractor, mask_instances[iterator-1][file_iter]))
 
             processed_images.append(processed_instances)

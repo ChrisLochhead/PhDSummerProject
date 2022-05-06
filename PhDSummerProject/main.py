@@ -1,13 +1,16 @@
 import init_directories
 import capture
 import ImageProcessor
-from Utilities import remove_block_images
+from Utilities import remove_block_images, remove_background_images, generate_labels
 import os, sys
 import cv2
 from pynput.keyboard import Key, Listener, KeyCode
 import numpy as np
 import matplotlib.pyplot as MPL
 import GEI
+import LocalResnet
+from torchvision.transforms import ToTensor, Lambda
+import torch
 
 if sys.version_info[:3] > (3, 7, 0):
     import maskcnn
@@ -41,6 +44,18 @@ def on_press(key):
             if current_menu == 0:
                 selected_function = run_camera
                 verbosity_selection(max_verbose = 2)
+            elif current_menu == 1:
+                #Load in data for testing
+                test_data = Resnet.CustomDataset('./Images/GEI/SpecialSilhouettes/')
+                #extract all the classes and labels
+                for i in range(0, test_data.__len__()):
+                   im, label = test_data.__getitem__(i)
+                   im = np.asarray(im)
+                   #display to make sure they are correct
+                   cv2.imshow("image: " + str(label), im)
+                   cv2.waitKey(0)
+                main()
+                print("Data label debug completed.")
             elif current_menu == 2:
                 selected_function(v= 0)
                 main()
@@ -49,47 +64,67 @@ def on_press(key):
             if current_menu == 0:
                 selected_function = get_silhouettes
                 verbosity_selection(max_verbose = 2)
+            elif current_menu == 1:
+                remove_background_images('./Images/Archive/Background_clean_test')
+                main()
+                print("backgrounds removed sucessfully.")
             elif current_menu == 2:
                 selected_function(v=1)
-                #main()
+                main()
                 
         if key.char == '3':
             if current_menu == 0:
                 #GEI.create_standard_GEI('./Images/GraphCut', './Images/GEI/GraphCut/')
                 #GEI.create_standard_GEI('./Images/SpecialSilhouettes', './Images/GEI/SpecialSilhouettes/')
                 GEI.create_standard_GEI('./Images/Masks', './Images/GEI/Masks/', mask = True)
+            elif current_menu == 1:
+                if sys.version_info[:3] > (3, 7, 0):
+                    print("true")
+                    cnn_segmenter = maskcnn.CNN_segmenter()
+                    cnn_segmenter.load_images('./Images/Instances')
+                    print("images loaded")
+                    masks = cnn_segmenter.detect()
+                    main()
+                    print("CNN-based segmentation complete")
+                else:
+                    print("Wrong version of python: cannot complete operation, you need python 3.7 or higher.")
             else:
                 selected_function = None
 
             main()
         if key.char == '4':
-            #GEI.create_FF_GEI('./Images/GraphCut', './Images/FFGEI/GraphCut/')
-            #GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
-            GEI.create_FF_GEI('./Images/Masks', './Images/FFGEI/Masks/', mask = True)
-
-            main()
+            if current_menu == 0:
+                #GEI.create_FF_GEI('./Images/GraphCut', './Images/FFGEI/GraphCut/')
+                #GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
+                GEI.create_FF_GEI('./Images/Masks', './Images/FFGEI/Masks/', mask = True)
+            elif current_menu == 1:
+                train_loader, test_loader = LocalResnet.dataloader_test(sourceTransform=ToTensor(),
+                                                                        targetTransform = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1)))
+                model = LocalResnet.train_network(train_loader, test_loader, out_path = './Results/')
+                #results = LocalResnet.check_accuracy(test_loader, model)
+                #print(f"Accuracy on training set: {LocalResnet.check_accuracy(train_loader, model) * 100:.2f}")
+                #print(f"Accuracy on test set: {LocalResnet.check_accuracy(test_loader, model) * 100:.2f}")
+            #If not current menu, will go straight back to main menu
+            #main()
         if key.char == '5':
-            ImageProcessor.get_silhouettes('./Images/Instances', HOG=True)
+            if current_menu == 0:
+                ImageProcessor.get_silhouettes('./Images/Instances', HOG=True)
+            elif current_menu == 1:
+                generate_labels('./Images/FFGEI/Graphcut', out='./Labels/FFGEI_labels_graphcut.csv')
             main()
         if key.char == '6':
-            if sys.version_info[:3] > (3, 7, 0):
-                print("true")
-                cnn_segmenter = maskcnn.CNN_segmenter()
-                cnn_segmenter.load_images('./Images/Instances')
-                print("images loaded")
-                masks = cnn_segmenter.detect()
+            if current_menu == 0:
+                ImageProcessor.create_special_silhouettes()
                 main()
-                print("CNN-based segmentation complete")
+                print("Special silhouettes created.")
             else:
-                print("Wrong version of python: cannot complete operation, you need python 3.7 or higher.")
+                main()
         if key.char == '7':
-            ImageProcessor.create_special_silhouettes()
-            main()
-            print("Special silhouettes created.")
-        if key.char == '8':
             ImageProcessor.graph_cut()
             main()
             print("Graph cut operation completed.")
+        if key.char == '8':
+            extended_menu()
         if key.char == '9':
             return False
 
@@ -103,7 +138,21 @@ def verbosity_selection(max_verbose = 1):
     for i in range(0, max_verbose):
         print(str(i+1) + ". " + str(i))
     print(str(max_verbose + 1) + ". Back")
-    
+
+def extended_menu():
+    global current_menu
+    current_menu = 1
+    clear_console()
+    print("More")
+    print("Select one of the following options:",
+          "\n\nUTILITIES\n",
+          "1. Test data and labels\n",
+          "2. Remove backgrounds\n",
+          "3. CNN segmenter\n",
+          "4. Experimental Resnet\n",
+          "5. Generate labels\n",
+          "6. Back\n")
+
 def main(error_message = None, init = False):
     global current_menu
     current_menu = 0
@@ -120,9 +169,9 @@ def main(error_message = None, init = False):
           "3. Create standard GEIs\n",
           "4. Create FF-GEIs\n",
           "5. Generate HOG images\n",
-          "6. CNN segmentation\n",
-          "7. Make Special Silhouettes\n",
-          "8. Graph cut\n",
+          "6. Special Silhouettes\n",
+          "7. Graph Cut\n",
+          "8. More\n",
           "9. Quit")
     if init == True:
         with Listener(on_press=on_press) as listener:

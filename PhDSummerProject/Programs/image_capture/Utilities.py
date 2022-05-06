@@ -3,8 +3,49 @@ import re
 from PIL import Image, ImageOps
 import numpy as np
 import os
+import JetsonYolo
 ########## Utility functions ####################
 #################################################
+#Generate labels from processed images {0: chris, 1: claire}
+def generate_labels(path, out = 'FFGEI_labels_graphcut.csv'):
+    data = []
+    for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
+        dirs.sort(key=numericalSort)
+        print("directory: ", iterator, subdir)
+        if len(files) > 0:
+            #Claire is index 1 - 20, Chris is the rest
+            index = 0
+            if iterator < 22:
+                index = 1
+            images = []
+            for file_iter, file in enumerate(sorted(files, key=numericalSort)):
+                data.append(index)#image = cv2.imread(os.path.join(subdir, file))
+                #if index == 0:
+                #    image = cv2.imread(os.path.join(subdir, file))
+                #    cv2.imshow("pasted ", np.asarray(image))
+                #   key = cv2.waitKey(0) & 0xff
+        else:
+            print("directory empty, iterating")
+            
+    os.makedirs(out_path, exist_ok=True)
+    np.savetxt(out, data, delimiter=",")
+
+#Remove backgrounds in raw images to cut down on processing time
+def remove_background_images(path):
+    for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
+        dirs.sort(key=numericalSort)
+        print("directory: ", iterator, subdir)
+        if len(files) > 0:
+            images = []
+            for file_iter, file in enumerate(sorted(files, key=numericalSort)):
+                # Get humans
+                image = cv2.imread(os.path.join(subdir, file))
+                objs = JetsonYolo.get_objs_from_frame(np.asarray(image), False)
+                # If no humans detected, remove the image
+                if len(objs) == 0:
+                    os.remove(os.path.join(subdir, file))
+
+
 #Remove all black images where no human has been found:
 def remove_block_images(path):
     for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
