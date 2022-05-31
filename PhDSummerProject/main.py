@@ -1,7 +1,7 @@
 import init_directories
 import capture
 import ImageProcessor
-from Utilities import remove_block_images, remove_background_images, generate_labels
+from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths
 import os, sys
 import cv2
 from pynput.keyboard import Key, Listener, KeyCode
@@ -46,14 +46,17 @@ def on_press(key):
                 verbosity_selection(max_verbose = 2)
             elif current_menu == 1:
                 #Load in data for testing
-                test_data = Resnet.CustomDataset('./Images/GEI/SpecialSilhouettes/')
+                create_HOGFFGEI()
+                
+                #DEBUG
+                #test_data = Resnet.CustomDataset('./Images/GEI/SpecialSilhouettes/')
                 #extract all the classes and labels
-                for i in range(0, test_data.__len__()):
-                   im, label = test_data.__getitem__(i)
-                   im = np.asarray(im)
-                   #display to make sure they are correct
-                   cv2.imshow("image: " + str(label), im)
-                   cv2.waitKey(0)
+                #for i in range(0, test_data.__len__()):
+                #   im, label = test_data.__getitem__(i)
+                #   im = np.asarray(im)
+                #  #display to make sure they are correct
+                #   cv2.imshow("image: " + str(label), im)
+                #   cv2.waitKey(0)
                 main()
                 print("Data label debug completed.")
             elif current_menu == 2:
@@ -98,19 +101,41 @@ def on_press(key):
                 #GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
                 GEI.create_FF_GEI('./Images/Masks', './Images/FFGEI/Masks/', mask = True)
             elif current_menu == 1:
-                train_loader, test_loader = LocalResnet.dataloader_test(sourceTransform=ToTensor(),
-                                                                        targetTransform = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1)))
-                model = LocalResnet.train_network(train_loader, test_loader, out_path = './Results/')
-                #results = LocalResnet.check_accuracy(test_loader, model)
-                #print(f"Accuracy on training set: {LocalResnet.check_accuracy(train_loader, model) * 100:.2f}")
-                #print(f"Accuracy on test set: {LocalResnet.check_accuracy(test_loader, model) * 100:.2f}")
+
+                generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' ) # normal and graphcut the only differing values, all the rest are the same indices.
+                print("instance indices generated")
+                target = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
+                train_loader, test_loader, data_loader = LocalResnet.dataloader_test(sourceTransform=ToTensor(),
+                                                                        targetTransform = target,
+                                                                        labels = './labels/FFGEI_labels.csv',
+                                                                        images = './Images/FFGEI/Unravelled/SpecialSilhouettes', #'./Images/FFGEI/Unravelled/GraphCut',
+                                                                        sizes = './Instance_Counts/normal/indices.csv',
+                                                                        batch_size = 50,
+                                                                        FFGEI = True)
+
+                model = LocalResnet.train_network(train_loader, test_loader, data_loader, epoch = 3, batch_size = 50, out_path = './Results/FFGEI/GraphCut/', model_path = './Models/FFGEI_GraphCut/')
+                #Experiments:
+                #GEI experiments:
+                #'./Labels/labels.csv,' './Images/GEI/SpecialSilhouettes' #All 42 long, run for 15 epochs, batch size 3 -
+                #'./Labels/labels.csv,' './Images/GEI/GraphCut'
+                #'./Labels/labels.csv,' './Images/GEI/Masks' -
+                
+                #FFGEI standard, needs extra code for going into each individual instance folder # All 4099 long, run for 3 epochs, batch size 50
+                #'./labels/FFGEI_labels.csv' './Images/FFGEI/Unravelled/SpecialSilhouettes', './Models/FFGEI_Special/' - done
+                #'./labels/FFGEI_labels.csv' './Images/FFGEI/Unravelled/Masks' - done
+                #'./labels/FFGEI_graphcut_labels.csv' './Images/FFGEI/Unravelled/GraphCut' -
+                
+                #FFGEI imbued with HOG, all 4099 long, run for 3 epochs, batch size 50
+                #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/SpecialSilhouettes' -
+                #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/Mask' -
+
             #If not current menu, will go straight back to main menu
             #main()
         if key.char == '5':
             if current_menu == 0:
                 ImageProcessor.get_silhouettes('./Images/Instances', HOG=True)
             elif current_menu == 1:
-                generate_labels('./Images/FFGEI/Graphcut', out='./Labels/FFGEI_labels_graphcut.csv')
+                generate_labels('./Images/FFGEI/Graphcut', out='./Labels/FFGEI_graphcut_labels.csv')
             main()
         if key.char == '6':
             if current_menu == 0:

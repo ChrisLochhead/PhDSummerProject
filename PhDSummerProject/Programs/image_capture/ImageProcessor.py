@@ -8,7 +8,7 @@ from HOG_functions import process_HOG_image, get_HOG_image
 import JetsonYolo
 import time
 from scipy.signal import savgol_filter
-import copy
+import copy  
 ########## Silhouette functions #################
 #################################################
 def run_histogram_equalization(image):
@@ -276,3 +276,4 @@ def get_silhouettes(path, verbose = 0, HOG = False):
     print("all saved")
 #################################################
 #################################################
+

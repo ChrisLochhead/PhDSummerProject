@@ -21,6 +21,12 @@ import numpy as np
 import cv2
 from torchvision.transforms import ToTensor, Lambda
 import pandas as pd
+from Utilities import get_tiles, numericalSort
+from sklearn.model_selection import train_test_split
+import copy
+
+from torch.utils.data import ConcatDataset
+from sklearn.model_selection import KFold
 
 label_map = {'chris':0, 'claire':1}
 # move all data and model to GPU if available
@@ -169,9 +175,10 @@ def ResNet152(img_channel=3, num_classes=2):
 
 # as per datasets requirement
 class CustomDataset(torch.utils.data.Dataset):
-    def __init__(self, labelsFile, rootDir, sourceTransform = None, targetTransform = None):
+    def __init__(self, labelsFile, rootDir, sourceTransform = None, targetTransform = None, FFGEI = False):
         self.data = pd.read_csv(labelsFile)
         self.rootDir = rootDir
+        self.FFGEI = FFGEI
         self.sourceTransform = sourceTransform
         self.targetTransform = targetTransform
         return
@@ -188,33 +195,109 @@ class CustomDataset(torch.utils.data.Dataset):
         image = Image.fromarray(image)
         image = np.asarray(image)
 
-        label = self.data['class'][idx]
+        #IF FFGEI, pre-flatten image
+        if self.FFGEI:
+            #Transform into tiles
+            tiles = get_tiles(image)
+            #First pass: flatten all tiles
+            #for i, t in enumerate(tiles):
+            #    tiles[i] = tiles[i].flatten()
+            #    print("shape: ", tiles[i])
+            #Second pass, append them all together
+            flat_img = tiles[0]
+            for i, t in enumerate(tiles):
+                if i > 0:
+                    flat_img = np.concatenate([flat_img,tiles[i]])
+
+            image = flat_img
+            #print("shape of image: ", image.shape)
+
+
+        label = self.data['Class'][idx]
 
         if self.sourceTransform:
             image = self.sourceTransform(image)
 
         return image, label
 
+def reset_weights(m):
+  '''
+    Try resetting model weights to avoid
+    weight leakage.
+  '''
+  for layer in m.children():
+   if hasattr(layer, 'reset_parameters'):
+    print(f'Reset trainable parameters of layer = {layer}')
+    layer.reset_parameters()
 
-def dataloader_test(sourceTransform, targetTransform):
+def dataloader_test(sourceTransform, targetTransform, labels, images, sizes, batch_size, FFGEI = False, HOG = False):
     os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
-    dataset = CustomDataset('./Labels/labels.csv', './Images/GEI/SpecialSilhouettes/test', sourceTransform, targetTransform)
-    train_data, test_data = random_split(dataset, [32, 10], generator=torch.Generator().manual_seed(12))
-    batch_size = 3
+    dataset = CustomDataset(labels, images, sourceTransform, targetTransform, FFGEI)
+    dataset_size = len(dataset.data)
+    print("dataset size : ", dataset_size)
+
+    df = pd.read_csv(sizes, sep=',',header=None)
+    instance_sizes = df.values
+
+    test_size = int(0.1 * dataset_size)
+    train_size = dataset_size - test_size
+    #train_data, test_data = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(12))
+
+    #X, y
+    X = []
+    for iterator, (subdir, dirs, files) in enumerate(os.walk(images)):
+        dirs.sort(key=numericalSort)
+        if len(files) > 0:
+            for file_iter, file in enumerate(sorted(files, key=numericalSort)):
+                X.append(cv2.imread(os.path.join(subdir, file), 0))
+
+    y = pd.read_csv(labels)
+    y = np.asarray(y['Class'])
+    print(len(X), len(y))
+
+
+    #change this to split the folders instead of the individual files
+    #############################################################################
+    num_instances = len(instance_sizes)
+    train_instances = int(num_instances * 0.8)
+    test_instances = num_instances - train_instances
+
+    #Get number of indices equal to number of test instances:
+    test_indices = np.random.randint(0, num_instances-1, test_instances)
+
+    #Transform these indices from indices 1-42 to 0-4099
+    start_value = 0
+    true_train_indices = []
+    true_test_indices = []
+
+    for iter, (index, length) in enumerate(instance_sizes):
+        if iter in test_indices:
+            for j in range(int(start_value), int(start_value) + int(length)):
+                true_test_indices.append(j)
+
+        start_value += int(length)
+    #print(sum(map(sum, instance_sizes)))
+    for i in range(0, sum(map(sum, instance_sizes))):
+        if i not in true_test_indices:
+            true_train_indices.append(i)
+
+    print("lengths - all, train, test: ", sum(instance_sizes), len(true_train_indices), len(true_test_indices))
+    #print("test indices", true_test_indices)
+
+    train_indices, val_indices, = train_test_split(list(range(len(y))), test_size=0.2,
+                                                  stratify=y)
+
+    #Pass the indices through as usual
+    train_data = torch.utils.data.Subset(dataset, train_indices)
+    test_data = torch.utils.data.Subset(dataset, val_indices)
+    ##############################################################################
+
     train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)#, num_workers=0)
-    return train_loader, test_loader
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)#, num_workers=0)
+    return train_loader, test_loader, dataset
 
-#        tmp = debug_transform(image[0])
-#        tmp = np.asarray(tmp)
-#        print("retreived label: ", str(image[1]))
-#        print("image itself: ", type(image[0]), image[0].shape, type(tmp))
-#        cv2.imshow("loaded data: " + str(image[1]), tmp)
-#        cv2.waitKey(0)
-#        print("sucess")
-
-def train_network(train_data, test_data, out_path):
+def train_network(train_data, test_data, data_loader, epoch, batch_size, out_path, model_path):
 
     #Results list (empty 2D array apart from titles
     results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1', 'Test_Acc', 'Test_Conf', 'Test_Prec', 'Test_Recall', 'Test_f1']]
@@ -222,8 +305,7 @@ def train_network(train_data, test_data, out_path):
     in_channels = 1
     num_classes = 2
     learning_rate = 0.001
-    batch_size = 3
-    num_epochs = 10
+    num_epochs = epoch
     
     # Load Data
     #This is just training for now, dataloader is the relevant variable
@@ -237,41 +319,117 @@ def train_network(train_data, test_data, out_path):
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    
-    # Train Network
-    for epoch in range(num_epochs):
-        result_row = [epoch]
-        for batch_idx, (data, targets) in enumerate(tqdm(train_loader)):
-            # Get data to cuda if possible
+    k_folds = 3
 
-            data = data.to(device=my_device)
-            targets = targets.to(device=my_device)
+    # Set fixed random number seed
+    torch.manual_seed(42)
 
-            # forward
-            scores = model(data)
-            loss = criterion(scores, targets)
-    
-            # backward
-            optimizer.zero_grad()
-            loss.backward()
-    
-            # gradient descent or adam step
-            optimizer.step()
+    # Define the K-fold Cross Validator
+    kfold = KFold(n_splits=k_folds, shuffle=True)
 
-        print("epoch: ", epoch)
-        print("training")
-        result_row += check_accuracy(train_loader, model)
-        print("testing", result_row)
-        result_row += check_accuracy(test_loader, model)
-        print("results: ", result_row)
-        results.append(result_row)
-        print("results in total: ", results)
+    # Start print
+    print('--------------------------------')
+
+    # K-fold Cross Validation model evaluation
+    for fold, (train_ids, test_ids) in enumerate(kfold.split(data_loader)):
+        fold_results = []
+        print("Fold number: ", fold)
+        # Sample elements randomly from a given list of ids, no replacement.
+        train_subsampler = torch.utils.data.SubsetRandomSampler(train_ids)
+        test_subsampler = torch.utils.data.SubsetRandomSampler(test_ids)
+
+        # Define data loaders for training and testing data in this fold
+        trainloader = torch.utils.data.DataLoader(
+            data_loader,
+            batch_size=batch_size, sampler=train_subsampler)
+        testloader = torch.utils.data.DataLoader(
+            data_loader,
+            batch_size=batch_size, sampler=test_subsampler)
+
+        # Init the neural network
+        #network = SimpleConvNet()
+        network = ResNet50(img_channel=1, num_classes=num_classes)
+        #network.apply(reset_weights)
+
+        # Initialize optimizer
+        #optimizer = torch.optim.Adam(network.parameters(), lr=1e-4)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+        # Run the training loop for defined number of epochs
+        for epoch in range(num_epochs):
+            result_row = [epoch + 1]
+            # Print epoch
+            print(f'Starting epoch {epoch + 1}')
+
+            # Set current loss value
+            current_loss = 0.0
+
+            # Iterate over the DataLoader for training data
+            for i, (data, targets) in enumerate(tqdm(trainloader)):
+
+                # Get inputs
+                #inputs, targets = data
+                data = data.to(device=my_device)
+                targets = targets.to(device=my_device)
+
+                # forward
+                scores = model(data)
+                loss = criterion(scores, targets)
+
+                # backward
+                optimizer.zero_grad()
+                loss.backward()
+
+                # gradient descent or adam step
+                optimizer.step()
+
+            print("epoch: ", epoch)
+            # print("training")
+            #result_row += check_accuracy(train_loader, model)
+            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(train_loader, model))), axis=0)
+            # print("testing", result_row)
+            #result_row += check_accuracy(test_loader, model)
+            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(test_loader, model))), axis=0)
+            print("results: ", result_row)
+            fold_results.append(result_row)
+
+        print("training completed, adding means and standard deviations")
+        frame = pd.DataFrame(fold_results)
+        means = []
+        stds = []
+        #Remove column labels
+        tmp = frame.iloc[1: , :]
+        for column in tmp:
+            stds.append(np.std(tmp[column]))
+            means.append(tmp[column].mean())
+
+        means[0] = 'Means'
+        stds[0] = 'St.Devs'
+        fold_results.append(means)
+        fold_results.append(stds)
+        #fold_results.append([0,0,0,0,0,0,0,0,0,0,0])
+
+        #print("Appending to results")
+        #print(fold_results)
+        #results.append(copy.deepcopy(fold_results))
+        results = np.concatenate((results, copy.deepcopy(fold_results)), axis=0)
+
+        #print("current results: ", results)
+
+
+        # Process is complete.
+        print('Training process has finished. Saving trained model.')
+
+        # Saving the model
+        os.makedirs(model_path, exist_ok=True)
+        save_path = model_path + '/model_fold_' + str(fold) + '.pth'
+        torch.save(network.state_dict(), save_path)
+
     frame = pd.DataFrame(results)
-    print(frame.head())
-
     #Save as CSV all results
     os.makedirs(out_path, exist_ok=True)
-    frame.to_csv(out_path + 'results.csv')
+    frame.to_csv(out_path + "results.csv")
     return model
 
     # Check accuracy on training & test to see how good our model
@@ -315,9 +473,10 @@ def check_accuracy(loader, model):
                         num_correct_claire+=1
                         claire_confidence += k[1].item()
                         true_pos += 1
-                if i == 0:
+
+                if i.item() == 0:
                     num_chris+=1
-                elif i == 1:
+                else:
                     num_claire+=1
 
                 if i != j:
@@ -331,12 +490,11 @@ def check_accuracy(loader, model):
 
 
     model.train()
-
+    #print("nums: ", num_claire, num_chris)
     total_claire_confidence = claire_confidence/num_claire * 100
     total_chris_confidence = chris_confidence/num_chris * 100
 
     if true_pos > 0 or false_pos > 0:
-        print("calcing precision")
         precision = true_pos / (true_pos + false_pos)
     else:
         precision = 0
@@ -350,7 +508,8 @@ def check_accuracy(loader, model):
         f1_score = 2 * ((precision * recall)/(precision + recall))
     else:
         f1_score = 0
-    print("true pos: ", true_pos, false_neg, false_pos)
+
+    #print("true pos: ", true_pos, false_neg, false_pos)
     print("chris examples: ", num_chris, " claire examples: ", num_claire)
     print("correct predictions: Chris: {}, Claire: {} ".format(num_correct_chris, num_correct_claire))
     print("precision: {}, recall: {}".format(precision, recall))

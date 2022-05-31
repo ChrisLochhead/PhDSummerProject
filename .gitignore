@@ -1,2 +1,6 @@
+PhDSummerProject/Labels/*
 PhDSummerProject/Images/*
+PhDSummerProject/Results/*
+PhDSummerProject/Models/*
+PhDSummerProject/Instance_Counts/*
 *.h5
