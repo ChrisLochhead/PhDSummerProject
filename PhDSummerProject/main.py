@@ -1,7 +1,7 @@
 import init_directories
 import capture
 import ImageProcessor
-from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths
+from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths, process_input_video
 import os, sys
 import cv2
 from pynput.keyboard import Key, Listener, KeyCode
@@ -101,19 +101,22 @@ def on_press(key):
                 #GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
                 GEI.create_FF_GEI('./Images/Masks', './Images/FFGEI/Masks/', mask = True)
             elif current_menu == 1:
-
-                generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' ) # normal and graphcut the only differing values, all the rest are the same indices.
-                print("instance indices generated")
+                #ImageProcessor.compare_ground_truths('./Images/Ground Truths', ['./Images/SpecialSilhouettes', './Images/Masks', './Images/GraphCut'])
+                #generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' ) # normal and graphcut the only differing values, all the rest are the same indices.
+                #print("instance indices generated")
+                batch_size = 3
+                epoch = 15
                 target = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
-                train_loader, test_loader, data_loader = LocalResnet.dataloader_test(sourceTransform=ToTensor(),
+                train_val_loader, test_loader= LocalResnet.dataloader_test(sourceTransform=ToTensor(),
                                                                         targetTransform = target,
-                                                                        labels = './labels/FFGEI_labels.csv',
-                                                                        images = './Images/FFGEI/Unravelled/SpecialSilhouettes', #'./Images/FFGEI/Unravelled/GraphCut',
-                                                                        sizes = './Instance_Counts/normal/indices.csv',
-                                                                        batch_size = 50,
-                                                                        FFGEI = True)
-
-                model = LocalResnet.train_network(train_loader, test_loader, data_loader, epoch = 3, batch_size = 50, out_path = './Results/FFGEI/GraphCut/', model_path = './Models/FFGEI_GraphCut/')
+                                                                        labels = './labels/labels.csv',
+                                                                        images = './Images/GEI/SpecialSilhouettes', #'./Images/FFGEI/Unravelled/GraphCut',
+                                                                        sizes = './Instance_Counts/normal/GEI.csv',
+                                                                        batch_size = batch_size,
+                                                                        FFGEI = False)
+                print("datasets prepared sucessfully")
+                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/FFGEI/GraphCut/', model_path = './Models/FFGEI_GraphCut/')
+                print("network complete")
                 #Experiments:
                 #GEI experiments:
                 #'./Labels/labels.csv,' './Images/GEI/SpecialSilhouettes' #All 42 long, run for 15 epochs, batch size 3 -
@@ -142,6 +145,8 @@ def on_press(key):
                 ImageProcessor.create_special_silhouettes()
                 main()
                 print("Special silhouettes created.")
+            elif current_menu == 1:
+                process_input_video('./Images/Instances/Instance_0.0', './Images/Masks/Instance_0.0')
             else:
                 main()
         if key.char == '7':
@@ -176,7 +181,8 @@ def extended_menu():
           "3. CNN segmenter\n",
           "4. Experimental Resnet\n",
           "5. Generate labels\n",
-          "6. Back\n")
+          "6. Run video prediction\n",
+          "7. Back\n")
 
 def main(error_message = None, init = False):
     global current_menu
@@ -204,7 +210,7 @@ def main(error_message = None, init = False):
                 listener.join()
             except:
                 print("program ended, listener closing")
-            
+
 if __name__ == '__main__':
     #Main menu
     main(init = True)

@@ -21,10 +21,10 @@ import numpy as np
 import cv2
 from torchvision.transforms import ToTensor, Lambda
 import pandas as pd
-from Utilities import get_tiles, numericalSort
+import Utilities #from Utilities import numericalSort
 from sklearn.model_selection import train_test_split
 import copy
-
+from numpy.random import default_rng
 from torch.utils.data import ConcatDataset
 from sklearn.model_selection import KFold
 
@@ -198,7 +198,7 @@ class CustomDataset(torch.utils.data.Dataset):
         #IF FFGEI, pre-flatten image
         if self.FFGEI:
             #Transform into tiles
-            tiles = get_tiles(image)
+            tiles = Utilities.get_tiles(image)
             #First pass: flatten all tiles
             #for i, t in enumerate(tiles):
             #    tiles[i] = tiles[i].flatten()
@@ -230,7 +230,7 @@ def reset_weights(m):
     print(f'Reset trainable parameters of layer = {layer}')
     layer.reset_parameters()
 
-def dataloader_test(sourceTransform, targetTransform, labels, images, sizes, batch_size, FFGEI = False, HOG = False):
+def dataloader_test(sourceTransform, targetTransform, labels, images, sizes, batch_size, FFGEI = False):
     os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
     dataset = CustomDataset(labels, images, sourceTransform, targetTransform, FFGEI)
     dataset_size = len(dataset.data)
@@ -239,78 +239,61 @@ def dataloader_test(sourceTransform, targetTransform, labels, images, sizes, bat
     df = pd.read_csv(sizes, sep=',',header=None)
     instance_sizes = df.values
 
-    test_size = int(0.1 * dataset_size)
-    train_size = dataset_size - test_size
-    #train_data, test_data = random_split(dataset, [train_size, test_size], generator=torch.Generator().manual_seed(12))
-
-    #X, y
-    X = []
-    for iterator, (subdir, dirs, files) in enumerate(os.walk(images)):
-        dirs.sort(key=numericalSort)
-        if len(files) > 0:
-            for file_iter, file in enumerate(sorted(files, key=numericalSort)):
-                X.append(cv2.imread(os.path.join(subdir, file), 0))
-
-    y = pd.read_csv(labels)
-    y = np.asarray(y['Class'])
-    print(len(X), len(y))
-
-
-    #change this to split the folders instead of the individual files
-    #############################################################################
+    #Split 80% training from the data
     num_instances = len(instance_sizes)
     train_instances = int(num_instances * 0.8)
     test_instances = num_instances - train_instances
-
-    #Get number of indices equal to number of test instances:
-    test_indices = np.random.randint(0, num_instances-1, test_instances)
+    rng = default_rng()
+    test_indices = rng.choice(num_instances-1, size = test_instances, replace=False)
+    print(test_indices)
 
     #Transform these indices from indices 1-42 to 0-4099
-    start_value = 0
     true_train_indices = []
     true_test_indices = []
-
+    #Test indices
+    start_value = 0
     for iter, (index, length) in enumerate(instance_sizes):
         if iter in test_indices:
             for j in range(int(start_value), int(start_value) + int(length)):
                 true_test_indices.append(j)
-
         start_value += int(length)
-    #print(sum(map(sum, instance_sizes)))
+
+    #Remainder is training indices
+    print("instance sizes: ", instance_sizes)
     for i in range(0, sum(map(sum, instance_sizes))):
         if i not in true_test_indices:
+            print("appending: ", i)
             true_train_indices.append(i)
 
-    print("lengths - all, train, test: ", sum(instance_sizes), len(true_train_indices), len(true_test_indices))
-    #print("test indices", true_test_indices)
-
-    train_indices, val_indices, = train_test_split(list(range(len(y))), test_size=0.2,
-                                                  stratify=y)
+    print("lengths - all, train, test: ", sum(instance_sizes), len(true_train_indices), len(true_test_indices))#, len(true_valid_indices))
+    print("test indices", len(true_test_indices))
+    print("train indices, ", len(true_train_indices))
 
     #Pass the indices through as usual
-    train_data = torch.utils.data.Subset(dataset, train_indices)
-    test_data = torch.utils.data.Subset(dataset, val_indices)
-    ##############################################################################
+    train_data = torch.utils.data.Subset(dataset, true_train_indices)
+    test_data = torch.utils.data.Subset(dataset, true_test_indices)
 
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    #Dataset replaced by train_data
+    train_val_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True)
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)#, num_workers=0)
-    return train_loader, test_loader, dataset
+    return train_data, test_loader
 
-def train_network(train_data, test_data, data_loader, epoch, batch_size, out_path, model_path):
+def train_network(data_loader, test_data, epoch, batch_size, out_path, model_path):
 
     #Results list (empty 2D array apart from titles
-    results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1', 'Test_Acc', 'Test_Conf', 'Test_Prec', 'Test_Recall', 'Test_f1']]
+    results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1',
+                'Val_Acc', 'Val_Conf', 'Val_Prec', 'Val_Recall', 'Val_f1',
+                'Test_Acc', 'Test_Conf', 'Test_Prec', 'Test_Recall', 'Test_f1']]
     # Hyperparameters
     in_channels = 1
     num_classes = 2
     learning_rate = 0.001
     num_epochs = epoch
-    
+
+    print(data_loader)
     # Load Data
     #This is just training for now, dataloader is the relevant variable
     #Passes in dataloaders already done
-    train_loader = train_data
     test_loader = test_data
 
     # Initialize network
@@ -330,29 +313,28 @@ def train_network(train_data, test_data, data_loader, epoch, batch_size, out_pat
     # Start print
     print('--------------------------------')
 
-    # K-fold Cross Validation model evaluation
-    for fold, (train_ids, test_ids) in enumerate(kfold.split(data_loader)):
+    # K-fold Cross Validation model evaluation, splits train/validation data
+    for fold, (train_ids, val_ids) in enumerate(kfold.split(data_loader)):
         fold_results = []
         print("Fold number: ", fold)
         # Sample elements randomly from a given list of ids, no replacement.
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_ids)
-        test_subsampler = torch.utils.data.SubsetRandomSampler(test_ids)
+        val_subsampler = torch.utils.data.SubsetRandomSampler(val_ids)
 
         # Define data loaders for training and testing data in this fold
         trainloader = torch.utils.data.DataLoader(
             data_loader,
             batch_size=batch_size, sampler=train_subsampler)
-        testloader = torch.utils.data.DataLoader(
+        valloader = torch.utils.data.DataLoader(
             data_loader,
-            batch_size=batch_size, sampler=test_subsampler)
+            batch_size=batch_size, sampler=val_subsampler)
 
         # Init the neural network
         #network = SimpleConvNet()
         network = ResNet50(img_channel=1, num_classes=num_classes)
-        #network.apply(reset_weights)
+        network.apply(reset_weights)
 
         # Initialize optimizer
-        #optimizer = torch.optim.Adam(network.parameters(), lr=1e-4)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -385,11 +367,11 @@ def train_network(train_data, test_data, data_loader, epoch, batch_size, out_pat
                 optimizer.step()
 
             print("epoch: ", epoch)
-            # print("training")
-            #result_row += check_accuracy(train_loader, model)
-            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(train_loader, model))), axis=0)
-            # print("testing", result_row)
-            #result_row += check_accuracy(test_loader, model)
+            #This is the data this fold of the model was just trained on
+            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(trainloader, model))), axis=0)
+            #This is the validation data
+            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(valloader, model))), axis=0)
+            #This is the unseen test data
             result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(test_loader, model))), axis=0)
             print("results: ", result_row)
             fold_results.append(result_row)
@@ -433,7 +415,7 @@ def train_network(train_data, test_data, data_loader, epoch, batch_size, out_pat
     return model
 
     # Check accuracy on training & test to see how good our model
-def check_accuracy(loader, model):
+def check_accuracy(loader, model, debug = False):
     num_correct = 0
     num_samples = 0
     chris_confidence = 0 # class 0
@@ -449,6 +431,7 @@ def check_accuracy(loader, model):
     true_pos = 0
     false_pos = 0
     false_neg = 0
+    prediction_array = []
 
     with torch.no_grad():
         for x, y in loader:
@@ -485,14 +468,19 @@ def check_accuracy(loader, model):
                     elif j == 1:
                         false_pos += 1
 
-
+            prediction_array.append(predictions.item())
             num_samples += predictions.size(0)
 
 
     model.train()
     #print("nums: ", num_claire, num_chris)
-    total_claire_confidence = claire_confidence/num_claire * 100
-    total_chris_confidence = chris_confidence/num_chris * 100
+    total_chris_confidence = 0
+    total_claire_confidence = 0
+
+    if num_claire > 0:
+        total_claire_confidence = claire_confidence/num_claire * 100
+    if num_chris > 0:
+        total_chris_confidence = chris_confidence/num_chris * 100
 
     if true_pos > 0 or false_pos > 0:
         precision = true_pos / (true_pos + false_pos)
@@ -513,11 +501,23 @@ def check_accuracy(loader, model):
     print("chris examples: ", num_chris, " claire examples: ", num_claire)
     print("correct predictions: Chris: {}, Claire: {} ".format(num_correct_chris, num_correct_claire))
     print("precision: {}, recall: {}".format(precision, recall))
-    print("total prediction confidence: {:.2f}%".format(((claire_confidence/num_claire) + (chris_confidence/num_chris)) * 100 / 2))
+    total_confidence = 0
+    if num_claire > 0 and num_chris > 0:
+        total_confidence = ((claire_confidence / num_claire) + (chris_confidence / num_chris)) * 100 / 2
+        print("total prediction confidence: {:.2f}%".format(((claire_confidence/num_claire) + (chris_confidence/num_chris)) * 100 / 2))
+    elif num_claire > 0:
+        print("this confidence", claire_confidence, num_claire)
+        total_confidence = (claire_confidence / num_claire) * 100 / 2
+    elif num_chris > 0:
+        print("that confidence", chris_confidence, num_chris)
+        total_confidence = (chris_confidence / num_chris) * 100 / 2
+
     print("accuracy: {:.2f}".format(num_correct/num_samples * 100))
 
     total_accuracy = num_correct/num_samples * 100
-    total_confidence = ((claire_confidence/num_claire) + (chris_confidence/num_chris)) * 100 / 2
-    return [total_accuracy, total_confidence, precision, recall, f1_score]
+    if debug == False:
+        return [total_accuracy, total_confidence, precision, recall, f1_score]
+    else:
+        return [prediction_array, total_accuracy, total_confidence, precision, recall, f1_score]
 
 

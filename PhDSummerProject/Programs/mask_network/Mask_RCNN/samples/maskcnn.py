@@ -7,8 +7,8 @@ import skimage.io
 import matplotlib
 import matplotlib.pyplot as plt
 import cv2
-from Utilities import numericalSort, make_directory
-
+#from Utilities import numericalSort, make_directory
+import Utilities
 # Root directory of the project
 #C:\Users\Chris\Desktop\PhDProject\PhDSummerProject\Programs\mask_network\Mask_RCNN
 ROOT_DIR = os.path.abspath("../") + "/PhDSummerProject/Programs/mask_network/Mask_RCNN"
@@ -92,10 +92,10 @@ class CNN_segmenter():
         os.chdir("../..")
         print("os ", os.getcwd())
         for iterator, (subdir, dirs, files) in enumerate(os.walk(dir)):
-            dirs.sort(key=numericalSort)
+            dirs.sort(key=Utilities.numericalSort)
             if len(files) > 0:
                 raw_images = []
-                for file_iter, file in enumerate(sorted(files, key=numericalSort)):
+                for file_iter, file in enumerate(sorted(files, key=Utilities.numericalSort)):
                     has_human = False
                     image = cv2.imread(os.path.join(subdir, file))
                     raw_images.append(image)
@@ -146,8 +146,8 @@ class CNN_segmenter():
                         #cv2.imshow("mask: ", person_mask.astype(np.uint8))
                         #cv2.imshow("raw: ", image)
                         #key = cv2.waitKey(0) & 0xff
-                    else:
-                        print("not a mask of a human")
+                    #else:
+                    #    print("not a mask of a human")
                     
                 human_masks.append(person_mask.astype(np.uint8))
             self.mask_image_instances.append(human_masks)

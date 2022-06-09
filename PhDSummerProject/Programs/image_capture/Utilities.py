@@ -11,25 +11,117 @@ from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 #from matplotlib import figure
 import matplotlib
+import ImageProcessor
+import GEI
+import torch
+import LocalResnet
+import sys
+from torchvision.transforms import ToTensor, Lambda
+if sys.version_info[:3] > (3, 7, 0):
+    import maskcnn
+
 matplotlib.use('TkAgg')
 ########## Utility functions ####################
 #################################################
-def generate_instance_lengths(path, out_path):
-    instance_lengths = []
-    #Get length of each instance
-    for iter, (dirpath, dirnames, filenames) in enumerate(os.walk(path)):
-        for dirs in sorted(dirnames, key=numericalSort):
-            list = os.listdir(os.path.join(path, dirs))  # dir is your directory path
-            print("list length of files: ", list)
-            instance_lengths.append([iter, int(len(list))])
+def process_input_video(instance_path, mask_path, model_path = './Models/FFGEI_Special/model_fold_2.pth', silhouette_type='Special', label_class = 1):
+    input_frames = []
+    for iterator, (subdir, dirs, files) in enumerate(os.walk(instance_path)):
+        if len(files) > 0:
+            for file_iter, file in enumerate(sorted(files, key=numericalSort)):
+                input_frames.append(cv2.imread(os.path.join(subdir, file), 0))
 
-    #Save files indexed by instance
-    print("instances")
-    print(instance_lengths)
-    os.makedirs(out_path, exist_ok=True)
-    np.savetxt( out_path + 'indices.csv', instance_lengths, fmt='%i', delimiter=",")
+    masks = []
+    if mask_path != 'none':
+        for iterator, (subdir, dirs, files) in enumerate(os.walk(mask_path)):
+            if len(files) > 0:
+                for file_iter, file in enumerate(sorted(files, key=numericalSort)):
+                    masks.append(cv2.imread(os.path.join(subdir, file), 0))
+    else:
+        # All three versions require a masking algorithm, only using the neural network version for brevity
+        #This version only for novel images with no ready-made masks
+        # Create Masks
+        cnn_segmenter = maskcnn.CNN_segmenter()
+        cnn_segmenter.load_images(instance_path)
+        masks = cnn_segmenter.detect()
 
-    
+    silhouettes = []
+    if silhouette_type == 'Special':
+        silhouettes = ImageProcessor.create_special_silhouettes(mask_path='none', image_path=instance_path, masks=masks, single = True)
+    elif silhouette_type == 'Graph':
+        silhouettes = ImageProcessor.graph_cut(mask_path='none', image_path=instance_path, by_mask=True, mask_edges=True, masks=masks)#, single = True)
+    elif silhouette_type == 'Mask':
+        silhouettes = masks
+
+    #Turn Silhouettes into GEIs
+    FFGEIS =  []
+    if silhouette_type != 'Mask':
+        FFGEIS = GEI.create_FF_GEI('none', 'none', mask=False, single = True, sil_array = silhouettes)
+    else:
+        FFGEIS = GEI.create_FF_GEI('none', 'none', mask=True, single = True, sil_array = silhouettes)
+
+    # Load neural network model
+    network = LocalResnet.ResNet50(img_channel=1, num_classes=2)
+    network.load_state_dict(torch.load(model_path))
+    network.eval()
+
+    #Create labels
+    label_data =[['ID', 'Class']]
+    for i in range(len(FFGEIS)):
+        label_data.append([i, label_class])
+    os.makedirs('./Temp/Labels', exist_ok=True)
+    np.savetxt('./Temp/Labels.csv', label_data, delimiter=",", fmt='%s')
+
+    #Save images
+    os.makedirs('./Temp/Images', exist_ok=True)
+    for iter, im in enumerate(FFGEIS):
+        cv2.imwrite('./Temp/Images/' + str(iter) + ".jpg", im)
+
+    target = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
+    dataset = LocalResnet.CustomDataset('./Temp/Labels.csv', './Temp/Images',
+                            sourceTransform=ToTensor(), targetTransform = target,
+                            FFGEI = True)
+    # Change processed images into dataloader, silhouettes was "dataloader" which was this   
+    # train_data = torch.utils.data.Subset(dataset, true_train_indices) and dataset was     
+    # dataset = CustomDataset(labels, images, sourceTransform, targetTransform, FFGEI)
+    test_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False)
+
+    # [predictions, total_accuracy, total_confidence, precision, recall, f1_score]
+    accuracy_results = LocalResnet.check_accuracy(test_loader, network, debug=True)
+    # Do a per-frame estimation, tallying up predictions
+    for iter in range(len(input_frames)):
+        # Display each frame as you go, write the prediction on the screen per frame with the confidence.
+        image = input_frames[iter]
+        text = 'Claire'
+
+        #print(accuracy_results[0])
+        if accuracy_results[0][iter] == 0:
+            text = 'Chris'
+
+        image = cv2.putText(image, 'Class: ' + text, (0, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255), 1,
+                            cv2.LINE_AA)
+        cv2.imshow("Result", image)
+        cv2.waitKey(0)
+
+    accum_pred = most_frequent(accuracy_results[0])
+    claire_count = sum(accuracy_results[0])
+    chris_count = len(accuracy_results[0]) - claire_count
+
+    prediction = 'Claire'
+    confidence_score = (claire_count / len(accuracy_results[0])) * 100
+    if chris_count > len(accuracy_results[0]) / 2:
+        prediction = 'Chris'
+        confidence_score = (chris_count / len(accuracy_results[0])) * 100
+
+    print("The individual in this sequence is : ", prediction, " with ", confidence_score, "% of the voted frames.")
+
+
+
+def numericalSort(value):
+    numbers = re.compile(r'(\d+)')
+    parts = numbers.split(value)
+    parts[1::2] = map(int, parts[1::2])
+    return parts
+
 def get_tiles(image_array):
     M = 80
     N = 80
@@ -38,6 +130,24 @@ def get_tiles(image_array):
     #    cv2.imshow("pasted ", np.asarray(t))
     #    key = cv2.waitKey(0) & 0xff
     return tiles
+
+# Program to find most frequent
+# element in a list
+def most_frequent(List):
+    return max(set(List), key=List.count)
+
+def generate_instance_lengths(path, out_path):
+    instance_lengths = []
+    #Get length of each instance
+    for iter, (dirpath, dirnames, filenames) in enumerate(os.walk(path)):
+        for dirs in sorted(dirnames, key=numericalSort):
+            list = os.listdir(os.path.join(path, dirs))  # dir is your directory path
+            instance_lengths.append([iter, int(len(list))])
+
+    #Save files indexed by instance
+    os.makedirs(out_path, exist_ok=True)
+    np.savetxt( out_path + 'indices.csv', instance_lengths, fmt='%i', delimiter=",")
+
 
 def create_HOGFFGEI(FFGEI_path = './Images/FFGEI/Unravelled/Masks', HOG_path = './Images/FFGEI/Unravelled/HOG_silhouettes', label = './Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/Mask/'):
     #Step 1 load in FFGEI and corresponding HOG image
@@ -193,22 +303,9 @@ def remove_block_images(path):
                 if np.all((image == 0)) or np.all((image == 255)):
                     os.remove(os.path.join(subdir, file))
                     
-def numericalSort(value):
-    numbers = re.compile(r'(\d+)')
-    parts = numbers.split(value)
-    parts[1::2] = map(int, parts[1::2])
-    return parts
-
 #Create directories if not already present
 def make_directory(dir, text = "Couldn't make directory" ):
-    try:
-        os.makedirs(dir)
-    except:
-        print(text)
-    try:
-        os.mkdir(dir)
-    except:
-        ("single directory already made.")
+    os.makedirs(dir, exist_ok=True)
 
 def get_from_directory(path):
     instances = []
@@ -224,10 +321,7 @@ def get_from_directory(path):
 
 def save_to_directory(instances, path):
 
-    try:
-        os.mkdir(path)
-    except:
-        print("root directory already present")
+    os.makedirs(path, exist_ok=True)
         
     for instance in instances:
         #Find the latest un-made path and save the new images to it

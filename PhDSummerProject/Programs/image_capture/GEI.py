@@ -1,35 +1,39 @@
 import os
-from Utilities import numericalSort, make_directory
+#from Utilities import numericalSort, make_directory
 import cv2
 import copy
 import numpy as np
-from Utilities import align_image
+import Utilities
+#from Utilities import align_image
 ##########GEI Functions #########################
 #################################################
 #Create a frame-by-frame GEI sequence
-def create_FF_GEI(silhouette_path, destination_path, mask = False):
+def create_FF_GEI(silhouette_path, destination_path, mask = False, single = False, sil_array = None):
     silhouette_sets = []
     template_size = 5
 
     #Create one file to save all GEI's
-    make_directory(destination_path, "FFGEI folder already exists")
+    Utilities.make_directory(destination_path, "FFGEI folder already exists")
 
     #Load in silhouettes
-    for subdir, dirs, files in os.walk(silhouette_path):
-        dirs.sort(key=numericalSort)
-        if len(files) == 0:
-            continue
-        silhouettes = []
-        for file in sorted(files, key = numericalSort):
-            silhouettes.append(cv2.imread(os.path.join(subdir, file), 0))
-        silhouette_sets.append(silhouettes)
+    if sil_array == None:
+        for subdir, dirs, files in os.walk(silhouette_path):
+            dirs.sort(key= Utilities.numericalSort)
+            if len(files) == 0:
+                continue
+            silhouettes = []
+            for file in sorted(files, key = Utilities.numericalSort):
+                silhouettes.append(cv2.imread(os.path.join(subdir, file), 0))
+            silhouette_sets.append(silhouettes)
+    else:
+        silhouette_sets.append(sil_array)
 
     #Align the masks if they are being used as silhouettes
     if mask == True:
         for i, sils in enumerate(silhouette_sets):
             for j, sil in enumerate(sils):
                 white_mask = cv2.inRange(sil, 180, 255)
-                silhouette_sets[i][j] = align_image(white_mask, 0)
+                silhouette_sets[i][j] = Utilities.align_image(white_mask, 0)
 
     #Go through the silhouette sets for the first time, generate GEI templates
     for index, sils in enumerate(silhouette_sets):
@@ -73,28 +77,32 @@ def create_FF_GEI(silhouette_path, destination_path, mask = False):
                 template = cv2.addWeighted(s, alpha, templates[int(i/template_size)], beta, 0.0)
                 FF_GEIS.append(template)
 
-        #Make destination directory and save the FFGEIS
-        make_directory(destination_path + "instance_" + str(index), "GEI folder already exists.")
-        for i, FFGEI in enumerate(FF_GEIS):
-            cv2.imwrite(destination_path + "instance_" + str(index) + "/" + str(i) + ".jpg", FFGEI)
+        #If only being performed on a single instance, return it
+        if single:
+            return FF_GEIS
+        else:
+            # Make destination directory and save the FFGEIS
+            Utilities.make_directory(destination_path + "instance_" + str(index), "GEI folder already exists.")
+            for i, FFGEI in enumerate(FF_GEIS):
+                cv2.imwrite(destination_path + "instance_" + str(index) + "/" + str(i) + ".jpg", FFGEI)
 
 def create_standard_GEI(path, destination_path, mask = False):
     #Create destination path
     os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
     #Create one file to save all GEI's
-    make_directory(destination_path, "GEI folder already exists")
+    Utilities.make_directory(destination_path, "GEI folder already exists")
 
     GEI = []
     #Gather all of the available silhouettes
     for instance, (subdir, dirs, files) in enumerate(os.walk(path)):
         raw_silhouettes = []
-        dirs.sort(key=numericalSort)
+        dirs.sort(key=Utilities.numericalSort)
         if len(files) > 0:
-            for file in sorted(files, key = numericalSort):
+            for file in sorted(files, key = Utilities.numericalSort):
                 if mask == True:
                     sil = cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE)
                     white_mask = cv2.inRange(sil, 180, 255)
-                    aligned_sil = align_image(white_mask, 0)
+                    aligned_sil = Utilities.align_image(white_mask, 0)
                     raw_silhouettes.append(aligned_sil)
                 else:
                     raw_silhouettes.append(cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE))
