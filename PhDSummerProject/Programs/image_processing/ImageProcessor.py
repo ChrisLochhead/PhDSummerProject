@@ -1,106 +1,127 @@
+#Standard
 import numpy as np
 import cv2
 import os 
 import copy
 from PIL import Image, ImageFilter
+import time
+
+#Local files
 from Utilities import make_directory, align_image, get_from_directory, save_to_directory, numericalSort
 from HOG_functions import process_HOG_image, get_HOG_image
 import JetsonYolo
-import time
-from scipy.signal import savgol_filter
-import copy  
-from sklearn.metrics import mean_squared_error
 
+#SCIPY and SKlearn
+from scipy.signal import savgol_filter, fftconvolve
+from sklearn.metrics import mean_squared_error
 from scipy.linalg import norm
 from scipy import sum, average
 from skimage.metrics import structural_similarity as compare_ssim
 
+
+########################################################################################
+# Author: Ujash Joshi, University of Toronto, 2017                                     #
+# Based on Octave implementation by: Benjamin Eltzner, 2014 <b.eltzner@gmx.de>         #
+# Octave/Matlab normxcorr2 implementation in python 3.5                                #
+# Details:                                                                             #
+# Normalized cross-correlation. Similiar results upto 3 significant digits.            #
+# https://github.com/Sabrewarrior/normxcorr2-python/master/norxcorr2.py                #
+# http://lordsabre.blogspot.ca/2017/09/matlab-normxcorr2-implemented-in-python.html    #
+########################################################################################
+
+def normxcorr2(template, image, mode="full"):
+    """
+    Input arrays should be floating point numbers.
+    :param template: N-D array, of template or filter you are using for cross-correlation.
+    Must be less or equal dimensions to image.
+    Length of each dimension must be less than length of image.
+    :param image: N-D array
+    :param mode: Options, "full", "valid", "same"
+    full (Default): The output of fftconvolve is the full discrete linear convolution of the inputs.
+    Output size will be image size + 1/2 template size in each dimension.
+    valid: The output consists only of those elements that do not rely on the zero-padding.
+    same: The output is the same size as image, centered with respect to the ‘full’ output.
+    :return: N-D array of same dimensions as image. Size depends on mode parameter.
+    """
+
+    # If this happens, it is probably a mistake
+    if np.ndim(template) > np.ndim(image) or \
+            len([i for i in range(np.ndim(template)) if template.shape[i] > image.shape[i]]) > 0:
+        print("normxcorr2: TEMPLATE larger than IMG. Arguments may be swapped.")
+
+    template = template - np.mean(template)
+    image = image - np.mean(image)
+
+    a1 = np.ones(template.shape)
+    # Faster to flip up down and left right then use fftconvolve instead of scipy's correlate
+    ar = np.flipud(np.fliplr(template))
+    out = fftconvolve(image, ar.conj(), mode=mode)
+
+    image = fftconvolve(np.square(image), a1, mode=mode) - \
+            np.square(fftconvolve(image, a1, mode=mode)) / (np.prod(template.shape))
+
+    # Remove small machine precision errors after subtraction
+    image[np.where(image < 0)] = 0
+
+    template = np.sum(np.square(template))
+    out = out / np.sqrt(image * template)
+
+    # Remove any divisions by 0 or very close to 0
+    out[np.where(np.logical_not(np.isfinite(out)))] = 0
+
+    return out
+
 ########## Silhouette functions #################
 #################################################
-def compare_ground_truths(ground_truth_path, raw_image_paths, out_path = './Results/Ground Truths/'):
-    #ground truths: instance 5, 6, 25, 26 using frames 1,2,3,4,5,  6,7,8,9,10 and 31,32,33,34,35
-    #Load in ground truths to array
-    ground_truths = []
-    raw_directories = ['Instance_5.0', 'Instance_6.0', 'Instance_25.0', 'Instance_26.0']
-    sub_directories = ['./Images/SpecialSilhouettes\\' , './Images/Masks\\' , './Images/GraphCut\\' ]
-    raw_indices = [[5,6,7,8,9], [30,31,32,33,34]]
-    types = [0,1,2] # corresponds to : ['silhouette', 'mask', 'graphcut']
-    error_table = []
-    averages_table = []
 
-    for iterator, (subdir, dirs, files) in enumerate(os.walk(ground_truth_path)):
-        dirs.sort(key=numericalSort)
-        if len(files) > 0:
-            for file_iter, file in enumerate(sorted(files, key=numericalSort)):
-                # load the input image and associated mask from disk and perform initial pre-processing
-                image = cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE)
-                mask =  align_image(image, 30)
-                ground_truths.append(mask)
+# import the necessary packages
+from collections import namedtuple
+import numpy as np
+import cv2
 
-    for type_iter, raw_image_path in enumerate(raw_image_paths):
-        #Load in corresponding raw images into another array
-        raw_images = []
-        for iterator, (subdir, dirs, files) in enumerate(os.walk(raw_image_path)):
-            dirs.sort(key=numericalSort)
-            if len(files) > 0:
-                for file_iter, file in enumerate(sorted(files, key=numericalSort)):
-                    for i, _ in enumerate(raw_directories):
-                        #print("subdir: ", subdir, sub_directories[type_iter] + raw_directories[i])
-                        if(subdir == sub_directories[type_iter] + raw_directories[i]):
-                        #if(subdir == './Images/SpecialSilhouettes\\' + raw_directories[i]):
-                            # load the input image and associated mask from disk and perform initial pre-processing
-                            if file_iter in raw_indices[0] and i == 0 or file_iter in raw_indices[0] and i == 2:
-                                #Masks arent saved in alignelhouettescause they are used to create special silhouettes
-                                if type_iter == 1:
-                                    image = cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE)
-                                    mask = align_image(image, 30)
-                                    raw_images.append(mask)
-                                else:
-                                    raw_images.append(cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE))
+# define the `Detection` object
+Detection = namedtuple("Detection", ["image_path", "gt", "pred"])
 
-                            elif file_iter in raw_indices[1] and i == 1 or file_iter in raw_indices[1] and i == 3:
-                                if type_iter == 1:
-                                    image = cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE)
-                                    mask = align_image(image, 30)
-                                    raw_images.append(mask)
-                                else:
-                                    raw_images.append(cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE))
+def bb_intersection_over_union(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
 
-        #print("final lens: ", len(ground_truths), len(raw_images))
-        #Iterate through both arrays
+    # compute the area of intersection rectangle
+    interArea = (xB - xA) * (yB - yA)
 
-        error_rates = []
-        for i, ground_truth in enumerate(ground_truths):
-            #cv2.imshow("ground truth ", ground_truth)
-            #cv2.imshow("silhouette ", raw_images[i])
-            #cv2.waitKey(0)
-            # Return confidence and the following four metrics: DICE score, Intersection over Union, normalized cross-correlation (minus normalisation), signal to noise compression
-            error = mean_squared_error(ground_truth, raw_images[i])
-            diff = cv2.absdiff(ground_truth, raw_images[i])
-            m_norm = sum(abs(diff))  # Manhattan norm
-            z_norm = norm(diff.ravel(), 0)  # Zero norm
-            (score, diff) = compare_ssim(ground_truth, raw_images[i], full=True)
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = (boxA[2] - boxA[0]) * (boxA[3] - boxA[1])
+    boxBArea = (boxB[2] - boxB[0]) * (boxB[3] - boxB[1])
 
-            #print('error: ', i, ':', error)
-            error_rates.append([types[type_iter], error, m_norm, z_norm, score])
-        error_rates = np.array(error_rates).astype(float)
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
 
-        print("done")
-        element_average = [types[type_iter], sum(error_rates[:, 1])/len(error_rates[:, 1]), sum(error_rates[:, 2])/len(error_rates[:, 2]),
-                           sum(error_rates[:, 3])/len(error_rates[:, 3]), sum(error_rates[:, 4])/len(error_rates[:, 4])]
-        print(element_average)
-        print("donee")
-        element_average = np.array(element_average).astype(float)
-        error_rates = np.vstack([error_rates, element_average])
+    # return the intersection over union value
+    return iou
 
-        if len(error_table) <= 0:
-            error_table = error_rates
-        else:
-            error_table = np.vstack([error_table, error_rates])
+def dice_coef(img, img2):
+    if img.shape != img2.shape:
+        raise ValueError("Shape mismatch: img and img2 must have to be of the same shape.")
+    else:
 
-    #Record accuracy results + print + save to a .csv
-    os.makedirs(out_path, exist_ok=True)
-    np.savetxt( out_path + 'error_margins.csv', error_table, fmt='%f', delimiter=",")
+        lenIntersection = 0
+
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                #Maybe change this to int casting or just rounding?
+                if (np.array_equal(img[i][j], img2[i][j])):
+                    lenIntersection += 1
+
+        lenimg = img.shape[0] * img.shape[1]
+        lenimg2 = img2.shape[0] * img2.shape[1]
+        value = (2. * lenIntersection / (lenimg + lenimg2))
+    return value
 
 def run_histogram_equalization(image):
     ycrcb_img = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
@@ -117,14 +138,15 @@ def edge_detect (channel):
     return sobel
    
 def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Images/Instances', masks = None, single = False):
-    
+    #Allow for the passing of pre-loaded silhouettes for the video test function
     if masks == None:
         mask_instances = get_from_directory(mask_path)
     else:
         mask_instances = masks
-        print("setting mask_instances correctly", len(mask_instances))
         
     special_silhouettes = []
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+
     for iterator, (subdir, dirs, files) in enumerate(os.walk(image_path)):
         dirs.sort(key=numericalSort)
         if len(files) > 0:
@@ -137,60 +159,24 @@ def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Ima
                 image = cv2.imread(os.path.join(subdir, file))
                 hist_image = run_histogram_equalization(image)
                 blurred = cv2.GaussianBlur(hist_image, (3, 3), 0)
-                #cv2.imshow("mask-1", blurred) #THIS
+
+                #Prepare the image using a sobel edge detector, remove noise and convert to an 8-bit array
                 edgeImg = np.max(np.array([edge_detect(blurred[:, :, 0]), edge_detect(blurred[:, :, 1]), edge_detect(blurred[:, :, 2])]), axis=0)
-                #cv2.imshow("mask-2", edgeImg) #THIS
-                #Noise removal
                 mean = np.mean(edgeImg);
                 edgeImg[edgeImg <= mean] = 0;
-
                 edgeImg_8u = np.asarray(edgeImg, np.uint8)
-                #If first frame, set as background
+
+                #If first frame in the sequence, set as background
                 if file_iter == 0:
                     background = edgeImg_8u
 
-                #Use morphological operations to produce a silhouette from background subtraction
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+                #Use morphological operations to produce an inflated silhouette from background subtraction
                 background_based_silhouette = cv2.absdiff(edgeImg_8u, background)
-                #cv2.imshow("mask-3", background_based_silhouette) #THIS
-                #Threshold this instead
-                tbackground_based_silhouette = cv2.threshold(background_based_silhouette, 100, 255, cv2.THRESH_BINARY)[1]
-                *_, omask = cv2.threshold(background_based_silhouette, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-                #background_based_silhouette = cv2.morphologyEx(background_based_silhouette, cv2.MORPH_CLOSE, kernel)
-                #background_based_silhouette = cv2.morphologyEx(background_based_silhouette, cv2.MORPH_OPEN, kernel)
-                opening = cv2.morphologyEx(omask, cv2.MORPH_OPEN,
-                                           kernel, iterations=1)
-                background_based_silhouette = tbackground_based_silhouette
-                # Retrieve and dilate the mask to prevent parts of the body being excluded
-                #print("retreiving mask: ", iterator, file_iter)
-                if single == False:
-                    mask = mask_instances[iterator - 1][file_iter]
-                else:
-                    mask = mask_instances[file_iter]
-
-                #Useless
+                background_based_silhouette = cv2.threshold(background_based_silhouette, 100, 255, cv2.THRESH_BINARY)[1]
+                *_, bk_mask = cv2.threshold(background_based_silhouette, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                opening = cv2.morphologyEx(bk_mask, cv2.MORPH_OPEN, kernel, iterations=1)
                 bk_expanded = cv2.dilate(mask, kernel, iterations=5)
-                #Get copy of the mask and turn into an actual mask (0-1)
-                temp_mask = copy.deepcopy(mask)
-                temp_mask[temp_mask == 255] = 1
-
-                #Apply the mask
-
-                #This currently removes the noise
-                threshold_lower = 30
-                threshold_upper = 220
-                mask_based_silhouette = cv2.Canny(blurred, threshold_lower, threshold_upper)
-
-                #cv2.imshow('edged', mask_based_silhouette)
-
-                mask_based_silhouette = cv2.bitwise_and(mask_based_silhouette, mask_based_silhouette, mask=temp_mask)
-                omask_test = cv2.bitwise_and(opening, opening, mask=bk_expanded)
-
-                #cv2.imshow("pre pre alignmnet", mask_based_silhouette) #THIS
-                #Take this and turn all pixels white, then perform open and close
-                mask_based_silhouette = cv2.morphologyEx(mask_based_silhouette, cv2.MORPH_CLOSE, kernel)
-                mask_based_silhouette = cv2.morphologyEx(mask_based_silhouette, cv2.MORPH_OPEN, kernel)
+                bk_mask_test = cv2.bitwise_and(opening, opening, mask=bk_expanded)
 
                 #Perform morphological operations on edge detected image after applying mask
                 #Thresholding to produce a silhouette of the extremities of the silhouette that the mask may have missed
@@ -198,16 +184,32 @@ def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Ima
                 edge_based_silhouette = cv2.morphologyEx(edge_based_silhouette, cv2.MORPH_CLOSE, kernel)
                 edge_based_silhouette = cv2.morphologyEx(edge_based_silhouette, cv2.MORPH_OPEN, kernel)
 
+                # Retrieve and dilate the mask to prevent parts of the body being excluded
+                if single == False:
+                    mask = mask_instances[iterator - 1][file_iter]
+                else:
+                    mask = mask_instances[file_iter]
+
+                #Get copy of the mask and turn into an actual mask (from range 0-1)
+                temp_mask = copy.deepcopy(mask)
+                temp_mask[temp_mask == 255] = 1
+
+                #Remove noise from the blurred image as a template
+                threshold_lower = 30
+                threshold_upper = 220
+                mask_based_silhouette = cv2.Canny(blurred, threshold_lower, threshold_upper)
+                #Apply the mask
+                mask_based_silhouette = cv2.bitwise_and(mask_based_silhouette, mask_based_silhouette, mask=temp_mask)
+
+                #Take this and turn all pixels white, then perform open and close to tidy it up
+                mask_based_silhouette = cv2.morphologyEx(mask_based_silhouette, cv2.MORPH_CLOSE, kernel)
+                mask_based_silhouette = cv2.morphologyEx(mask_based_silhouette, cv2.MORPH_OPEN, kernel)
+
                 #Align images
-                #cv2.imshow("pre alignmnet", mask_based_silhouette) #THIS
                 mask =  align_image(mask, 30)
-                omask_test =  align_image(omask_test, 1)
+                bk_mask_test =  align_image(bk_mask_test, 1)
                 mask_based_silhouette =  align_image(mask_based_silhouette, 30)
                 edge_based_silhouette =  align_image(edge_based_silhouette, 30)
-
-                #cv2.imshow("mask", mask) #THIS
-                #cv2.imshow("rough special ", edge_based_silhouette) #THIS
-                #cv2.imshow("mask-based", mask_based_silhouette) #THIS
 
                 alpha = 1.0
                 beta = 1.0
@@ -216,32 +218,24 @@ def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Ima
                 if len(combined_example) == 0:
                     combined_example = mask
 
-                #Works to preserve better :)
-                combined_example = cv2.addWeighted(omask_test, alpha, combined_example, beta, 0.0)
-                #combined_example = cv2.addWeighted(mask_based_silhouette, alpha, combined_example, beta, 0.0)
-                #combined_example = cv2.addWeighted(mask, alpha, combined_example, beta, 0.0)
-                #cv2.imshow("stage 1 ", combined_example) #THIS
+                #Combine the masks, apply a mode filter to smooth the result
+                combined_example = cv2.addWeighted(bk_mask_test, alpha, combined_example, beta, 0.0)
                 image_example =  Image.fromarray(combined_example)
                 image_example = image_example.filter(ImageFilter.ModeFilter(size=5))
-                combined_example = np.array(image_example)
-                finished_example = combined_example#cv2.threshold(combined_example,80,255,cv2.THRESH_BINARY)[1] # optional threshold
-                silhouettes.append(finished_example)
-                #cv2.imshow("completed ", finished_example) #THIS
-                #cv2.imshow("orig ", mask) #THIS
-                #cv2.waitKey(0)
+                ilhouettes.append(np.array(image_example))
             special_silhouettes.append(silhouettes)
+            #If a single image has been passed instead of a whole instance, return after one iteration
             if single == True:
                 return silhouettes
-            print("appended")
-
     #Save
     save_to_directory(special_silhouettes, './Images/SpecialSilhouettes')
     print("operation complete, special silhouettes saved")
     return special_silhouettes
 
-##Graph cut
+#Graph cut
 def graph_cut(mask_path = './Images/Masks', image_path = './Images/Instances', by_mask = True, mask_edges = True, masks = None):
 
+    #Adjust save path depending on which combination is used to create it. The best reults are hard-coded into the definition
     if by_mask and mask_edges:
         save_path = './Images/GraphCut'
     elif by_mask and not mask_edges:
@@ -251,6 +245,7 @@ def graph_cut(mask_path = './Images/Masks', image_path = './Images/Instances', b
     else:
         save_path = './Images/graph_nomask_noedges'
 
+    #Allow masks to be read directly from memory for live testing
     if masks == None:
         mask_instances = get_from_directory(mask_path)
     else:
@@ -336,14 +331,8 @@ def graph_cut(mask_path = './Images/Masks', image_path = './Images/Instances', b
                 outputMask = np.array(outputMask)
                 # apply a bitwise AND to the image using our mask generated by GrabCut to generate our final output image
                 output = cv2.bitwise_and(image, image, mask=outputMask)
-                # show the input image followed by the mask and output generated by
-                # GrabCut and bitwise masking
-                #cv2.imshow("Mask", outputMask)
-                #cv2.imshow("Output", output)
-                #cv2.imshow("combined Output", grab_image)
                 outputMask = align_image(outputMask, 0)
                 images.append(outputMask)
-                #cv2.waitKey(0)
             image_instances.append(images)
     save_to_directory(image_instances, save_path)
     print("graph cut operation complete")
@@ -358,6 +347,7 @@ def get_silhouettes(path, verbose = 0, HOG = False):
     mask_instances = get_from_directory('./Images/Masks')
     make_directory(path, "Silhouette folder already exists")
     processed_images = []
+
     for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
         dirs.sort(key=numericalSort)
         print("printing iterator: ", iterator, subdir)
@@ -365,18 +355,13 @@ def get_silhouettes(path, verbose = 0, HOG = False):
             raw_images = []
             processed_instances = []
             subtractor = cv2.createBackgroundSubtractorKNN()
-
             for file_iter, file in enumerate(sorted(files, key = numericalSort)):
-                #print("on : ", subdir, file, iterator, file_iter)
                 raw_images.append(cv2.imread(os.path.join(subdir, file)))
                 #Prepare image
                 gray_img = cv2.cvtColor(raw_images[file_iter], cv2.COLOR_BGR2GRAY)
-                #gray_img = cv2.GaussianBlur(gray_img, (3, 3), 0)
-
                 #First pass: if HOG take a background example
                 if file_iter == 0 and HOG == True:
                     HOG_background = get_HOG_image(gray_img)
-
                 #Process image according to chosen processing method
                 if HOG == False:
                     processed_instances.append(process_image(gray_img, raw_images[file_iter], verbose, subtractor))

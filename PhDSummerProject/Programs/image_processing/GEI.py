@@ -1,10 +1,9 @@
 import os
-#from Utilities import numericalSort, make_directory
 import cv2
 import copy
 import numpy as np
 import Utilities
-#from Utilities import align_image
+
 ##########GEI Functions #########################
 #################################################
 #Create a frame-by-frame GEI sequence
@@ -43,17 +42,14 @@ def create_FF_GEI(silhouette_path, destination_path, mask = False, single = Fals
         for i, sil in enumerate(sils):
             if i % template_size == 0 and i != 0:
                 #cv2.imshow("appending template ", current_template)
-                temp = copy.deepcopy(current_template)
                 #key = cv2.waitKey(0) & 0xff
+                temp = copy.deepcopy(current_template)
                 templates.append(copy.deepcopy(current_template))
                 current_template = copy.deepcopy(sil)
             else:
                 alpha = 1.0 / ((i % template_size) + 1)
                 beta = 1.0 - alpha
-                #cv2.imshow("template before ", current_template)
                 current_template = cv2.addWeighted(sil, alpha, current_template, beta, 0.0)
-                #cv2.imshow("template after ", current_template)
-                #key = cv2.waitKey(0) & 0xff
 
         #DEBUG: Print produced templates
         #for i, template in enumerate(templates):
@@ -72,8 +68,8 @@ def create_FF_GEI(silhouette_path, destination_path, mask = False, single = Fals
         #Second pass, get FF-GEI's using templates
         for i, s in enumerate(sils):
             if len(templates) > int(i/template_size):
-                alpha = 0.9#1.0 / (i + 1)
-                beta = 0.75#1.0 - alpha
+                alpha = 0.9
+                beta = 0.75
                 template = cv2.addWeighted(s, alpha, templates[int(i/template_size)], beta, 0.0)
                 FF_GEIS.append(template)
 
@@ -121,8 +117,8 @@ def create_standard_GEI(path, destination_path, mask = False):
                 cv2.imwrite(destination_path + str(instance) + ".jpg", GEI)
                 #Debug
                 #cv2.imshow("GEI", GEI)
-                print(destination_path + str(instance) + ".jpg")
                 #key = cv2.waitKey(0) & 0xff
+                #print(destination_path + str(instance) + ".jpg")
             
 #################################################
 #################################################

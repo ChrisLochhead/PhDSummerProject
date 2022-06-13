@@ -34,41 +34,25 @@ class InferenceConfig(coco.CocoConfig):
     IMAGES_PER_GPU = 1
 
 
-#TODO:  add code for graph cut using this mask,
-#       turn segmented images into silhouettes
-#       try import functions except from capture, as its the only thing that can't run on python 3.7
-#       make new set of silhouettes here, GEI's and HOG can still be done on other program
-#       Once better images achieved, start work on model for classification
 class CNN_segmenter():
     def __init__(self):
-        print("pure dopamine")
         # Go back to first area:
-        print("directory before: ", os.getcwd())
         os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
-        print("directory now: ", os.getcwd())
         # Initialise
         # Directory to save logs and trained model
         self.MODEL_DIR = os.path.join(ROOT_DIR, "logs")  ##
-
         # Local path to trained weights file
         self.COCO_MODEL_PATH = os.path.join('', "mask_rcnn_coco.h5")  #
-
         # Download COCO trained weights from Releases if needed
         if not os.path.exists(self.COCO_MODEL_PATH):
             utils.download_trained_weights(self.COCO_MODEL_PATH)  #
-
-        # Directory of images to run detection on
-        #self.IMAGE_DIR = image_dir#os.path.join(ROOT_DIR, "images")
-
         self.config = InferenceConfig()
         self.config.display()
 
         # Create model object in inference mode.
         self.model = modellib.MaskRCNN(mode="inference", model_dir='mask_rcnn_coco.hy', config=self.config)
-
         # Load weights trained on MS-COCO
         self.model.load_weights('mask_rcnn_coco.h5', by_name=True)
-
         # COCO Class names
         self.class_names = ['BG', 'person', 'bicycle', 'car', 'motorcycle', 'airplane',
                        'bus', 'train', 'truck', 'boat', 'traffic light',
@@ -99,8 +83,6 @@ class CNN_segmenter():
                     has_human = False
                     image = cv2.imread(os.path.join(subdir, file))
                     raw_images.append(image)
-                    #cv2.imshow("test", image)
-                    #key = cv2.waitKey(0) & 0xff
                 self.image_instances.append(raw_images)
         print("images loaded to segmenter")
 
@@ -133,9 +115,6 @@ class CNN_segmenter():
                     human_masks.append(empty_mask.astype(np.uint8))
                     continue
 
-                print("mask shape: ", mask.shape)
-
-                #print(mask)
                 #For every colour dimension
                 for i in range(mask.shape[2]):
                     if r['class_ids'][i] == 1:
@@ -143,12 +122,7 @@ class CNN_segmenter():
                         #Adding it to the save array
                         person_mask = mask[:, :, i]
                         person_mask[person_mask == 1] = 255
-                        #cv2.imshow("mask: ", person_mask.astype(np.uint8))
-                        #cv2.imshow("raw: ", image)
-                        #key = cv2.waitKey(0) & 0xff
-                    #else:
-                    #    print("not a mask of a human")
-                    
+
                 human_masks.append(person_mask.astype(np.uint8))
             self.mask_image_instances.append(human_masks)
 
@@ -169,7 +143,6 @@ class CNN_segmenter():
                 except:
                     print("already exists: ", n)
                     n += 1
-
             for i, image in enumerate(instance):
                 cv2.imwrite(os.getcwd() + "\Images\Masks\Instance" + str(n) + "/" + str(i) + ".jpg", image)
 

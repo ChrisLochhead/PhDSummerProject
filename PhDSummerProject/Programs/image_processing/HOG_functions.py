@@ -7,7 +7,6 @@ import os
 from Utilities import numericalSort, align_image
 ########## HOG functions ########################
 #################################################
-
 #Return a displayable HOG image
 def get_HOG_image(image):
     fd, hog_image = hog(image, orientations=8, pixels_per_cell=(8, 8),
@@ -17,17 +16,12 @@ def get_HOG_image(image):
     return hog_image_rescaled
 
 #Convert images to HOG representation
-def get_HOG_images(path, mask = False):
-    mask_instances = []
-    #Load correpsonding masks
-
+def get_HOG_images(path):
     HOG_images = []
     for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
         dirs.sort(key=numericalSort)
         for file_iter, file in enumerate(sorted(files, key = alphanum_key)):
             hog_image = cv2.imread(os.path.join(subdir, file), 0)
-            #Apply mask to image
-
             #Get hog image
             hog_image = get_HOG_image(hog_image)
             HOG_images.append(hog_image.flatten())
@@ -37,7 +31,7 @@ def get_HOG_images(path, mask = False):
 
     return np.array(HOG_images)
 
-def process_HOG_image(image, orig_img, HOG_background, verbose = 0, subtractor = None, mask = None):
+def process_HOG_image(image, HOG_background, mask = None):
 
     #Get background reference, do background substraction and rescale HOG values to 0 - 255
     HOG_difference = cv2.absdiff(image, HOG_background)
@@ -53,14 +47,14 @@ def process_HOG_image(image, orig_img, HOG_background, verbose = 0, subtractor =
         mask = cv2.dilate(mask, (7,7), iterations=10)
         mask[mask==255] = 1
         HOG_difference = cv2.bitwise_and(HOG_difference, HOG_difference, mask=mask)
-        #cv2.imshow("masked diff", HOG_difference)
 
     # Extract the contours formed by the silhouette
     white_mask = cv2.inRange(HOG_difference, 180, 255)
-    #Return the aligned HOG silhouette
+    #Debug
     #cv2.imshow("diff", HOG_difference)
     #cv2.imshow("mask", white_mask)
     #cv2.waitKey(0)
+    #Return the aligned HOG silhouette
     return np.asarray(align_image(white_mask, 0, HOG = True)) # was HOG_difference
 
 #################################################

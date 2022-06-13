@@ -1,32 +1,34 @@
-# Imports
+#Torch
 import torch
-import torchvision # torch package for vision related things
+import torchvision
+from torch import optim 
+from torch import nn  
 import torch.nn as nn
-import torch.nn.functional as F  # Parameterless functions, like (some) activation functions
-import torchvision.datasets as datasets  # Standard datasets
+import torch.nn.functional as F
+import torchvision.datasets as datasets 
 from torch.utils.data.dataset import Dataset
-from torch.utils.data import random_split
-import torchvision.transforms as transforms  # Transformations we can perform on our dataset for augmentation
-from torch import optim  # For optimizers like SGD, Adam, etc.
-from torch import nn  # All neural network modules
-from torch.utils.data import DataLoader  # Gives easier dataset managment by creating mini batches etc.
-from tqdm import tqdm  # For nice progress bar!
+from torch.utils.data import random_split, DataLoader, ConcatDataset
+import torchvision.transforms as transforms
+from torchvision.transforms import ToTensor, Lambda
+
+#Standard imports
+from tqdm import tqdm  
 import pandas as pd
-import skimage.io as sk
-#from torchvision import transforms
+import copy
+from numpy.random import default_rng
 import matplotlib.pyplot as plt
-from PIL import ImageTk, Image# Need to override __init__, __len__, __getitem__
+from PIL import ImageTk, Image
 import os
 import numpy as np
 import cv2
-from torchvision.transforms import ToTensor, Lambda
-import pandas as pd
+
+#Local files
 import Utilities #from Utilities import numericalSort
-from sklearn.model_selection import train_test_split
-import copy
-from numpy.random import default_rng
-from torch.utils.data import ConcatDataset
-from sklearn.model_selection import KFold
+
+#SKLearn
+import skimage.io as sk
+from sklearn.model_selection import train_test_split, KFold
+
 
 label_map = {'chris':0, 'claire':1}
 # move all data and model to GPU if available
@@ -199,19 +201,12 @@ class CustomDataset(torch.utils.data.Dataset):
         if self.FFGEI:
             #Transform into tiles
             tiles = Utilities.get_tiles(image)
-            #First pass: flatten all tiles
-            #for i, t in enumerate(tiles):
-            #    tiles[i] = tiles[i].flatten()
-            #    print("shape: ", tiles[i])
-            #Second pass, append them all together
+            #Append them all together
             flat_img = tiles[0]
             for i, t in enumerate(tiles):
                 if i > 0:
                     flat_img = np.concatenate([flat_img,tiles[i]])
-
             image = flat_img
-            #print("shape of image: ", image.shape)
-
 
         label = self.data['Class'][idx]
 
@@ -221,33 +216,26 @@ class CustomDataset(torch.utils.data.Dataset):
         return image, label
 
 def reset_weights(m):
-  '''
-    Try resetting model weights to avoid
-    weight leakage.
-  '''
   for layer in m.children():
    if hasattr(layer, 'reset_parameters'):
     print(f'Reset trainable parameters of layer = {layer}')
     layer.reset_parameters()
 
-def dataloader_test(sourceTransform, targetTransform, labels, images, sizes, batch_size, FFGEI = False):
+def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, batch_size, FFGEI = False):
+    #Initialise data paths and check sizes
     os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
     dataset = CustomDataset(labels, images, sourceTransform, targetTransform, FFGEI)
-    dataset_size = len(dataset.data)
-    print("dataset size : ", dataset_size)
-
     df = pd.read_csv(sizes, sep=',',header=None)
     instance_sizes = df.values
 
-    #Split 80% training from the data
+    #Split 80% training from the data, this 80% will make up the training and validation datasets
     num_instances = len(instance_sizes)
     train_instances = int(num_instances * 0.8)
     test_instances = num_instances - train_instances
     rng = default_rng()
     test_indices = rng.choice(num_instances-1, size = test_instances, replace=False)
-    print(test_indices)
 
-    #Transform these indices from indices 1-42 to 0-4099
+    #Transform these indices from indices 1-42 (number of instances) to 0-4099 (number of total frames among all instances)
     true_train_indices = []
     true_test_indices = []
     #Test indices
@@ -265,20 +253,21 @@ def dataloader_test(sourceTransform, targetTransform, labels, images, sizes, bat
             print("appending: ", i)
             true_train_indices.append(i)
 
-    print("lengths - all, train, test: ", sum(instance_sizes), len(true_train_indices), len(true_test_indices))#, len(true_valid_indices))
-    print("test indices", len(true_test_indices))
-    print("train indices, ", len(true_train_indices))
+    #Debug 
+    #print("lengths - all, train, test: ", sum(instance_sizes), len(true_train_indices), len(true_test_indices))#, len(true_valid_indices))
+    #print("test indices", len(true_test_indices))
+    #print("train indices, ", len(true_train_indices))
 
-    #Pass the indices through as usual
+    #Pass the indices through as usual to create the subsets
     train_data = torch.utils.data.Subset(dataset, true_train_indices)
     test_data = torch.utils.data.Subset(dataset, true_test_indices)
 
-    #Dataset replaced by train_data
+    #Create dataloaders for training/validation set and test set.
     train_val_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True)
     return train_data, test_loader
 
-def train_network(data_loader, test_data, epoch, batch_size, out_path, model_path):
+def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_path):
 
     #Results list (empty 2D array apart from titles
     results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1',
@@ -290,29 +279,19 @@ def train_network(data_loader, test_data, epoch, batch_size, out_path, model_pat
     learning_rate = 0.001
     num_epochs = epoch
 
-    print(data_loader)
-    # Load Data
-    #This is just training for now, dataloader is the relevant variable
-    #Passes in dataloaders already done
-    test_loader = test_data
-
     # Initialize network
     model = ResNet50(img_channel=1, num_classes=num_classes)
-
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     k_folds = 3
-
     # Set fixed random number seed
     torch.manual_seed(42)
-
     # Define the K-fold Cross Validator
     kfold = KFold(n_splits=k_folds, shuffle=True)
 
     # Start print
     print('--------------------------------')
-
     # K-fold Cross Validation model evaluation, splits train/validation data
     for fold, (train_ids, val_ids) in enumerate(kfold.split(data_loader)):
         fold_results = []
@@ -330,50 +309,39 @@ def train_network(data_loader, test_data, epoch, batch_size, out_path, model_pat
             batch_size=batch_size, sampler=val_subsampler)
 
         # Init the neural network
-        #network = SimpleConvNet()
         network = ResNet50(img_channel=1, num_classes=num_classes)
         network.apply(reset_weights)
-
-        # Initialize optimizer
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
         # Run the training loop for defined number of epochs
         for epoch in range(num_epochs):
             result_row = [epoch + 1]
-            # Print epoch
             print(f'Starting epoch {epoch + 1}')
-
             # Set current loss value
             current_loss = 0.0
-
             # Iterate over the DataLoader for training data
             for i, (data, targets) in enumerate(tqdm(trainloader)):
-
                 # Get inputs
                 #inputs, targets = data
                 data = data.to(device=my_device)
                 targets = targets.to(device=my_device)
-
                 # forward
                 scores = model(data)
                 loss = criterion(scores, targets)
-
                 # backward
                 optimizer.zero_grad()
                 loss.backward()
-
                 # gradient descent or adam step
                 optimizer.step()
 
             print("epoch: ", epoch)
             #This is the data this fold of the model was just trained on
-            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(trainloader, model))), axis=0)
+            result_row = np.concatenate((result_row, copy.deepcopy(evaluate_model(trainloader, model))), axis=0)
             #This is the validation data
-            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(valloader, model))), axis=0)
+            result_row = np.concatenate((result_row, copy.deepcopy(evaluate_model(valloader, model))), axis=0)
             #This is the unseen test data
-            result_row = np.concatenate((result_row, copy.deepcopy(check_accuracy(test_loader, model))), axis=0)
-            print("results: ", result_row)
+            result_row = np.concatenate((result_row, copy.deepcopy(evaluate_model(test_loader, model))), axis=0)
             fold_results.append(result_row)
 
         print("training completed, adding means and standard deviations")
@@ -390,15 +358,7 @@ def train_network(data_loader, test_data, epoch, batch_size, out_path, model_pat
         stds[0] = 'St.Devs'
         fold_results.append(means)
         fold_results.append(stds)
-        #fold_results.append([0,0,0,0,0,0,0,0,0,0,0])
-
-        #print("Appending to results")
-        #print(fold_results)
-        #results.append(copy.deepcopy(fold_results))
         results = np.concatenate((results, copy.deepcopy(fold_results)), axis=0)
-
-        #print("current results: ", results)
-
 
         # Process is complete.
         print('Training process has finished. Saving trained model.')
@@ -415,7 +375,7 @@ def train_network(data_loader, test_data, epoch, batch_size, out_path, model_pat
     return model
 
     # Check accuracy on training & test to see how good our model
-def check_accuracy(loader, model, debug = False):
+def evaluate_model(loader, model, debug = False):
     num_correct = 0
     num_samples = 0
     chris_confidence = 0 # class 0
@@ -437,14 +397,13 @@ def check_accuracy(loader, model, debug = False):
         for x, y in loader:
             x = x.to(device=my_device)
             y = y.to(device=my_device)
-
             scores = model(x)
 
             #Get prediction probabilities
             probs = torch.nn.functional.softmax(scores, dim=1)
             top_p, top_class = probs.topk(1, dim=1)
             _, predictions = scores.max(1)
-
+            #Iterate through results to get TP, FP, FN and FP for various metric calculations
             zipped = zip(y, predictions, probs)
             for i, j, k in zipped:
                 if i == j:
@@ -456,32 +415,32 @@ def check_accuracy(loader, model, debug = False):
                         num_correct_claire+=1
                         claire_confidence += k[1].item()
                         true_pos += 1
-
                 if i.item() == 0:
                     num_chris+=1
                 else:
                     num_claire+=1
-
                 if i != j:
                     if j == 0:
                         false_neg += 1
                     elif j == 1:
                         false_pos += 1
 
+            #Also save the predictions in order for the video test
             prediction_array.append(predictions.item())
             num_samples += predictions.size(0)
 
 
     model.train()
-    #print("nums: ", num_claire, num_chris)
     total_chris_confidence = 0
     total_claire_confidence = 0
 
+    #Calculate confidence of each person, given that they appear at all in the testing set
     if num_claire > 0:
         total_claire_confidence = claire_confidence/num_claire * 100
     if num_chris > 0:
         total_chris_confidence = chris_confidence/num_chris * 100
 
+    #Prevent division by 0 errors when calculating precision and recall
     if true_pos > 0 or false_pos > 0:
         precision = true_pos / (true_pos + false_pos)
     else:
@@ -492,16 +451,19 @@ def check_accuracy(loader, model, debug = False):
     else:
         recall = 0
 
+    #F1 score
     if precision > 0 or recall > 0:
         f1_score = 2 * ((precision * recall)/(precision + recall))
     else:
         f1_score = 0
 
-    #print("true pos: ", true_pos, false_neg, false_pos)
-    print("chris examples: ", num_chris, " claire examples: ", num_claire)
-    print("correct predictions: Chris: {}, Claire: {} ".format(num_correct_chris, num_correct_claire))
-    print("precision: {}, recall: {}".format(precision, recall))
+    #Debug
+    #print("chris examples: ", num_chris, " claire examples: ", num_claire)
+    #print("correct predictions: Chris: {}, Claire: {} ".format(num_correct_chris, num_correct_claire))
+    #print("precision: {}, recall: {}".format(precision, recall))
+
     total_confidence = 0
+    #Prevent division by 0 confidence score errors when using this function for the live video test, as there will only be 1 class present in the data.
     if num_claire > 0 and num_chris > 0:
         total_confidence = ((claire_confidence / num_claire) + (chris_confidence / num_chris)) * 100 / 2
         print("total prediction confidence: {:.2f}%".format(((claire_confidence/num_claire) + (chris_confidence/num_chris)) * 100 / 2))
@@ -513,8 +475,9 @@ def check_accuracy(loader, model, debug = False):
         total_confidence = (chris_confidence / num_chris) * 100 / 2
 
     print("accuracy: {:.2f}".format(num_correct/num_samples * 100))
-
     total_accuracy = num_correct/num_samples * 100
+
+    #If debug, return the prediction array as this is the live video test.
     if debug == False:
         return [total_accuracy, total_confidence, precision, recall, f1_score]
     else:

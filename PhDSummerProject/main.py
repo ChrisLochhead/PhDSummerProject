@@ -1,17 +1,24 @@
-import init_directories
-import capture
-import ImageProcessor
-from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths, process_input_video
+#Standard packages
 import os, sys
 import cv2
 from pynput.keyboard import Key, Listener, KeyCode
 import numpy as np
 import matplotlib.pyplot as MPL
+
+#Local files
+import init_directories
+import capture
+import ImageProcessor
+from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths
 import GEI
 import LocalResnet
-from torchvision.transforms import ToTensor, Lambda
-import torch
+import Experiment_Functions
 
+#Torch
+import torch
+from torchvision.transforms import ToTensor, Lambda
+
+#MaskCNN only works on the PC version of this app, the Jetson Nano doesn't support python 3.7
 if sys.version_info[:3] > (3, 7, 0):
     import maskcnn
 
@@ -26,11 +33,11 @@ def clear_console():
     os.system(command)
     
 def run_camera(path="./Images/Instances/", v=0):
-    #try:
-    camera = capture.Camera()
-    camera.run(path="./Images/Instances/", verbose=v)
-    #except:
-    #    main("No camera detected, returning to main menu")
+    try:
+        camera = capture.Camera()
+        camera.run(path="./Images/Instances/", verbose=v)
+    except:
+        main("No camera detected, returning to main menu")
 
 def get_silhouettes(v =1):
     ImageProcessor.get_silhouettes('./Images/Instances', verbose=v)
@@ -47,18 +54,7 @@ def on_press(key):
             elif current_menu == 1:
                 #Load in data for testing
                 create_HOGFFGEI()
-                
-                #DEBUG
-                #test_data = Resnet.CustomDataset('./Images/GEI/SpecialSilhouettes/')
-                #extract all the classes and labels
-                #for i in range(0, test_data.__len__()):
-                #   im, label = test_data.__getitem__(i)
-                #   im = np.asarray(im)
-                #  #display to make sure they are correct
-                #   cv2.imshow("image: " + str(label), im)
-                #   cv2.waitKey(0)
                 main()
-                print("Data label debug completed.")
             elif current_menu == 2:
                 selected_function(v= 0)
                 main()
@@ -97,32 +93,29 @@ def on_press(key):
             main()
         if key.char == '4':
             if current_menu == 0:
+                #Three options for creating FFGEIS
                 #GEI.create_FF_GEI('./Images/GraphCut', './Images/FFGEI/GraphCut/')
                 #GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
                 GEI.create_FF_GEI('./Images/Masks', './Images/FFGEI/Masks/', mask = True)
             elif current_menu == 1:
-                #ImageProcessor.compare_ground_truths('./Images/Ground Truths', ['./Images/SpecialSilhouettes', './Images/Masks', './Images/GraphCut'])
-                #generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' ) # normal and graphcut the only differing values, all the rest are the same indices.
-                #print("instance indices generated")
                 batch_size = 3
                 epoch = 15
                 target = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
-                train_val_loader, test_loader= LocalResnet.dataloader_test(sourceTransform=ToTensor(),
+                train_val_loader, test_loader= LocalResnet.create_dataloaders(sourceTransform=ToTensor(),
                                                                         targetTransform = target,
                                                                         labels = './labels/labels.csv',
-                                                                        images = './Images/GEI/SpecialSilhouettes', #'./Images/FFGEI/Unravelled/GraphCut',
+                                                                        images = './Images/GEI/SpecialSilhouettes',
                                                                         sizes = './Instance_Counts/normal/GEI.csv',
                                                                         batch_size = batch_size,
                                                                         FFGEI = False)
                 print("datasets prepared sucessfully")
                 model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/FFGEI/GraphCut/', model_path = './Models/FFGEI_GraphCut/')
-                print("network complete")
                 #Experiments:
                 #GEI experiments:
                 #'./Labels/labels.csv,' './Images/GEI/SpecialSilhouettes' #All 42 long, run for 15 epochs, batch size 3 -
                 #'./Labels/labels.csv,' './Images/GEI/GraphCut'
                 #'./Labels/labels.csv,' './Images/GEI/Masks' -
-                
+
                 #FFGEI standard, needs extra code for going into each individual instance folder # All 4099 long, run for 3 epochs, batch size 50
                 #'./labels/FFGEI_labels.csv' './Images/FFGEI/Unravelled/SpecialSilhouettes', './Models/FFGEI_Special/' - done
                 #'./labels/FFGEI_labels.csv' './Images/FFGEI/Unravelled/Masks' - done
@@ -131,9 +124,8 @@ def on_press(key):
                 #FFGEI imbued with HOG, all 4099 long, run for 3 epochs, batch size 50
                 #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/SpecialSilhouettes' -
                 #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/Mask' -
-
-            #If not current menu, will go straight back to main menu
-            #main()
+            main()
+            print("network training and testing complete")
         if key.char == '5':
             if current_menu == 0:
                 ImageProcessor.get_silhouettes('./Images/Instances', HOG=True)
@@ -146,18 +138,33 @@ def on_press(key):
                 main()
                 print("Special silhouettes created.")
             elif current_menu == 1:
-                process_input_video('./Images/Instances/Instance_0.0', './Images/Masks/Instance_0.0')
+                Experimental_Functions.process_input_video('./Images/Instances/Instance_0.0', './Images/Masks/Instance_0.0')
             else:
                 main()
         if key.char == '7':
-            ImageProcessor.graph_cut()
-            main()
-            print("Graph cut operation completed.")
+            if current_menu == 0:
+                ImageProcessor.graph_cut()
+                main()
+                print("Graph cut operation completed.")
+            elif current_menu == 1:
+                Experiment_Functions.compare_ground_truths('./Images/Ground Truths', ['./Images/SpecialSilhouettes', './Images/Masks', './Images/GraphCut'])
+                main()
+                print("ground truth comparison completed.")
         if key.char == '8':
-            extended_menu()
+            if current_menu == 0:
+                extended_menu()
+            elif current_menu == 1:
+                # normal and graphcut the only differing values as graphcut is the only function to discard frames.
+                generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' )
+                main()
+                print("instance indices generated")
         if key.char == '9':
-            return False
+            if current_menu == 0:
+                return False
+            elif current_menu == 1:
+                main()
 
+#Verbosity selection for camera and image processing functions
 def verbosity_selection(max_verbose = 1):
     clear_console()
     global current_menu
@@ -182,7 +189,9 @@ def extended_menu():
           "4. Experimental Resnet\n",
           "5. Generate labels\n",
           "6. Run video prediction\n",
-          "7. Back\n")
+          "7. Compare ground truths\n",
+          "8. Generate instance lengths\n",
+          "9. Back\n")
 
 def main(error_message = None, init = False):
     global current_menu
