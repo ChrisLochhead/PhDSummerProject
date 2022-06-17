@@ -86,13 +86,16 @@ class Camera:
     def run(self, path = "./capture1/", verbose = 1, depth = False):
 
         i = 0
+        human_detected_count = 0
+        human_stationary = False
         image_buffer = []
 
         #Make storage for image captures
-        try:
-            os.mkdir(path)
-        except:
-            print("folder already exist")
+        os.makedirs(path, exist_ok=True)
+        #try:
+        #    os.mkdir(path)
+        #except:
+        #    print("folder already exist")
 
         s0 = time.time()
         s1 = 0.0
@@ -128,13 +131,26 @@ class Camera:
                         seen_human = False
 
                         #Detector only returns human objs
-                        if len(objs) > 0:
-                            seen_human = True
-                            s1 = time.time()
+                        if len(objs) == 1:
+                            human_detected_count += 1
+                            if human_detected_count > 1:
+                                print("found human stationary")
+                                human_stationary = True
+                                seen_human = False
+                            else:
+                                print("found new human")
+                                seen_human = True
+                                s1 = time.time()
+                        else:
+                            if human_stationary == True:
+                                print("resetting found human")
+                                human_stationary = False
+                                human_detected_count = 0
+
 
                 #Debug
-                #debug_img, not_used = JetsonYolo.plot_obj_bounds(objs, np.asarray(refined_img))
-                refined_img = np.asarray(refined_img)
+                debug_img, not_used = JetsonYolo.plot_obj_bounds(objs, np.asarray(refined_img))
+                refined_img = np.asarray(debug_img)
 
                 i += 1
                 #Print FPS
@@ -144,7 +160,7 @@ class Camera:
 
                 #Show images
                 if verbose > 0:
-                    cv2.imshow('RealSense', color_img)
+                    cv2.imshow('RealSense', refined_img)
                     cv2.waitKey(1)
                     
                 if seen_human:

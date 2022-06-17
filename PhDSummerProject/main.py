@@ -13,10 +13,14 @@ from Utilities import remove_block_images, remove_background_images, generate_la
 import GEI
 import LocalResnet
 import Experiment_Functions
+import File_Decimation
 
 #Torch
 import torch
 from torchvision.transforms import ToTensor, Lambda
+
+#Internet
+import urllib.request
 
 #MaskCNN only works on the PC version of this app, the Jetson Nano doesn't support python 3.7
 if sys.version_info[:3] > (3, 7, 0):
@@ -31,11 +35,18 @@ def clear_console():
     if os.name in ('nt', 'dos'):  # If Machine is running on Windows, use cls
         command = 'cls'
     os.system(command)
+
+def connect(host='http://google.com'):
+    try:
+        urllib.request.urlopen(host)  # Python 3.x
+        return True
+    except:
+        return False
     
 def run_camera(path="./Images/Instances/", v=0):
     try:
         camera = capture.Camera()
-        camera.run(path="./Images/Instances/", verbose=v)
+        camera.run(path="./Images/CameraTest/", verbose=v)
     except:
         main("No camera detected, returning to main menu")
 
@@ -58,6 +69,11 @@ def on_press(key):
             elif current_menu == 2:
                 selected_function(v= 0)
                 main()
+            elif current_menu == 3:
+                # normal and graphcut the only differing values as graphcut is the only function to discard frames.
+                generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' )
+                main()
+                print("instance indices generated")
                 
         if key.char == '2':
             if current_menu == 0:
@@ -69,6 +85,17 @@ def on_press(key):
                 print("backgrounds removed sucessfully.")
             elif current_menu == 2:
                 selected_function(v=1)
+                main()
+            elif current_menu == 3:
+                # test
+                print("testing internet connection")
+                if connect():
+                    print("internet connected, proceeding.")
+                else:
+                    print("no internet, cannot commence file upload.")
+                print("connected" if connect() else "no internet!")
+                #Conduct file decimation and upload test
+                File_Decimation.decimate_and_send()
                 main()
                 
         if key.char == '3':
@@ -152,12 +179,9 @@ def on_press(key):
                 print("ground truth comparison completed.")
         if key.char == '8':
             if current_menu == 0:
-                extended_menu()
+                extended_menu(1, page_1)
             elif current_menu == 1:
-                # normal and graphcut the only differing values as graphcut is the only function to discard frames.
-                generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' )
-                main()
-                print("instance indices generated")
+                extended_menu(3, page_3)
         if key.char == '9':
             if current_menu == 0:
                 return False
@@ -176,22 +200,52 @@ def verbosity_selection(max_verbose = 1):
         print(str(i+1) + ". " + str(i))
     print(str(max_verbose + 1) + ". Back")
 
-def extended_menu():
+def extended_menu(index, content):
     global current_menu
-    current_menu = 1
+    current_menu = index
     clear_console()
     print("More")
-    print("Select one of the following options:",
-          "\n\nUTILITIES\n",
-          "1. Test data and labels\n",
-          "2. Remove backgrounds\n",
-          "3. CNN segmenter\n",
-          "4. Experimental Resnet\n",
-          "5. Generate labels\n",
-          "6. Run video prediction\n",
-          "7. Compare ground truths\n",
-          "8. Generate instance lengths\n",
-          "9. Back\n")
+    print(content)
+
+
+page_0 = """Welcome
+
+Select one of the following options:
+         
+REGULAR FUNCTIONS
+         
+1. Activate camera capture
+
+PRE-PROCESSING
+
+2. Process background
+3. Create standard GEIs
+4. Create FF-GEIs
+5. Generate HOG images
+6. Special Silhouettes
+7. Graph Cut
+8. More
+9. Quit"""
+
+page_1 = """Select one of the following options:
+
+UTILITIES
+
+1. Test data and labels
+2. Remove backgrounds
+3. CNN segmenter
+4. Experimental Resnet
+5. Generate labels
+6. Run video prediction
+7. Compare ground truths
+8. More
+9. Back\n"""
+
+page_3 = """Select on of the following options:
+
+1. Generate instance lengths
+2. Test file decimation and sending system
+3. Back"""
 
 def main(error_message = None, init = False):
     global current_menu
@@ -200,25 +254,13 @@ def main(error_message = None, init = False):
     if error_message:
         print(error_message)
 
-    print("Welcome")
-    print("Select one of the following options:",
-          "\n\nREGULAR FUNCTIONS\n",
-          "1. Activate camera capture",
-          "\n\nPRE-PROCESSING\n",
-          "2. Process background\n", # needs verbosity
-          "3. Create standard GEIs\n",
-          "4. Create FF-GEIs\n",
-          "5. Generate HOG images\n",
-          "6. Special Silhouettes\n",
-          "7. Graph Cut\n",
-          "8. More\n",
-          "9. Quit")
-    if init == True:
-        with Listener(on_press=on_press) as listener:
-            try:
-                listener.join()
-            except:
-                print("program ended, listener closing")
+    print(page_0)
+
+    with Listener(on_press=on_press) as listener:
+        try:
+            listener.join()
+        except:
+            print("program ended, listener closing")
 
 if __name__ == '__main__':
     #Main menu

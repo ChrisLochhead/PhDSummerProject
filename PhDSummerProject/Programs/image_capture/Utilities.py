@@ -149,6 +149,22 @@ def generate_instance_lengths(path, out_path):
     os.makedirs(out_path, exist_ok=True)
     np.savetxt( out_path + 'indices.csv', instance_lengths, fmt='%i', delimiter=",")
 
+def get_bounding_box(image):
+    contours, hierarchy = cv2.findContours(image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2:]
+    idx = 0
+    for cnt in contours:
+        idx += 1
+        x, y, w, h = cv2.boundingRect(cnt)
+        roi = image[y:y + h, x:x + w]
+        cv2.imwrite(str(idx) + '.jpg', roi)
+        cv2.rectangle(image,(x,y),(x+w,y+h),(255) ,2)
+    return [x, y, w, h]
+
+def get_bounding_mask(image):
+    contours, hierarchy = cv2.findContours(image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2:]
+    idx = 0
+    cv2.drawContours(image, contours, -1, (0, 255, 0), 3)
+    return contours
 
 def create_HOGFFGEI(FFGEI_path = './Images/FFGEI/Unravelled/Masks', HOG_path = './Images/FFGEI/Unravelled/HOG_silhouettes', label = './Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/Mask/'):
     #Step 1 load in FFGEI and corresponding HOG image
