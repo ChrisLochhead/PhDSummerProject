@@ -19,9 +19,6 @@ import File_Decimation
 import torch
 from torchvision.transforms import ToTensor, Lambda
 
-#Internet
-import urllib.request
-
 #MaskCNN only works on the PC version of this app, the Jetson Nano doesn't support python 3.7
 if sys.version_info[:3] > (3, 7, 0):
     import maskcnn
@@ -35,14 +32,7 @@ def clear_console():
     if os.name in ('nt', 'dos'):  # If Machine is running on Windows, use cls
         command = 'cls'
     os.system(command)
-
-def connect(host='http://google.com'):
-    try:
-        urllib.request.urlopen(host)  # Python 3.x
-        return True
-    except:
-        return False
-    
+   
 def run_camera(path="./Images/Instances/", v=0):
     try:
         camera = capture.Camera()
@@ -68,7 +58,7 @@ def on_press(key):
                 main()
             elif current_menu == 2:
                 selected_function(v= 0)
-                main()
+                #main()
             elif current_menu == 3:
                 # normal and graphcut the only differing values as graphcut is the only function to discard frames.
                 generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' )
@@ -87,13 +77,6 @@ def on_press(key):
                 selected_function(v=1)
                 main()
             elif current_menu == 3:
-                # test
-                print("testing internet connection")
-                if connect():
-                    print("internet connected, proceeding.")
-                else:
-                    print("no internet, cannot commence file upload.")
-                print("connected" if connect() else "no internet!")
                 #Conduct file decimation and upload test
                 File_Decimation.decimate_and_send()
                 main()
@@ -250,7 +233,7 @@ page_3 = """Select on of the following options:
 def main(error_message = None, init = False):
     global current_menu
     current_menu = 0
-    clear_console()
+    #clear_console()
     if error_message:
         print(error_message)
 

@@ -44,8 +44,16 @@ from apiclient.http import MediaFileUpload
 
 gauth = GoogleAuth()
 drive = GoogleDrive(gauth)
+#Internet
+import urllib.request
 
-
+def connect(host='http://google.com'):
+    try:
+        urllib.request.urlopen(host)  # Python 3.x
+        return True
+    except:
+        return False
+    
 # Only works on the PC version of this app, Jetson doesn't support python 3.7
 if sys.version_info[:3] > (3, 7, 0):
     import maskcnn
@@ -170,6 +178,13 @@ def check_human_traversal(images):
 
 #Function to send proof-read instances to a g-mail account or google drive
 def decimate_and_send(path = './Images/CameraTest'):
+    print("testing internet connection")
+    if connect():
+        print("internet connected, proceeding.")
+    else:
+        print("no internet, cannot commence file upload.")
+        return False
+    
     #Instead of deleting, flag the indices to see which ones would get decimated to ascertain if it's acceptable.
     #Load in images
     service = init_google_drive()

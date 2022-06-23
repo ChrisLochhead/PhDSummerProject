@@ -10,7 +10,8 @@ from PIL import Image
 from pynput.keyboard import Key, Listener, KeyCode
 import os
 import copy
-
+import File_Decimation
+import datetime
 break_program = False
 
 def on_press(key):
@@ -27,6 +28,8 @@ class Camera:
 
         # Configure depth and color streams
         self.pipeline = rs.pipeline()
+        self.file_count = 0
+        self.file_limit = 3
         config = rs.config()
         if depth:
             config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 15) # original 640 by 480
@@ -39,7 +42,6 @@ class Camera:
 
         # Start streaming
         profile = self.pipeline.start(config)
-
         # We will be removing the background of objects more than
         #  clipping_distance_in_meters meters away
         if depth:
@@ -108,6 +110,26 @@ class Camera:
 
         with Listener(on_press=on_press) as listener:
             while break_program == False:
+
+                #Check if time is appropriate for monitoring
+                print("making it here")
+                now = datetime.datetime.now()
+                print("now  : ", now)
+                morning_limit = now.replace(hour=8, minute=0, second=0, microsecond=0)
+                evening_limit = now.replace(hour=10, minute=37, second=0, microsecond=0)
+                if now < morning_limit or now > evening_limit:
+                    break_program = True
+
+
+                if self.file_count >= self.file_limit:
+                    #Purge and upload data
+                    print("purging data: ", self.file_count)
+                    if File_Decimation.connect() != False:
+                        File_Decimation.decimate_and_send()
+                        self.file_count = 0
+                    else:
+                        print("cannot decimate, no internet connection")
+
                 #Record if previous frame seen a human
                 seen_human_previous = seen_human
 
@@ -150,7 +172,8 @@ class Camera:
 
                 #Debug
                 debug_img, not_used = JetsonYolo.plot_obj_bounds(objs, np.asarray(refined_img))
-                refined_img = np.asarray(debug_img)
+                #refined_img = np.asarray(debug_img)
+                refined_img = np.asarray(refined_img)
 
                 i += 1
                 #Print FPS
@@ -203,6 +226,7 @@ class Camera:
                             if verbose > 0:
                                 print("dumping buffer")
                             cv2.imwrite(local_path + image_data[1], image_data[0])
+                        self.file_count += 1
 
                         #clearing buffer
                         current_image_array.clear()
