@@ -189,6 +189,7 @@ def create_HOGFFGEI(FFGEI_path = './Images/FFGEI/Unravelled/Masks', HOG_path = '
     #Step 3 flatten all of the splits and append them into one long chain (now we are just combining the entire thing, then splitting at a later point
     concatenated_images = []
     for h, f in zip(HOGs, FFGEIs):
+        print("in here?")
         concatenated_image = []
         concatenated_image = cv2.addWeighted(h, 1.0, f, 0.8, 0.0)
         concatenated_images.append(concatenated_image)
@@ -253,7 +254,7 @@ def generate_labels(path, out):
         if len(files) > 0:
             #Claire is index 1 - 20, Chris is the rest
             index = 0
-            if iterator < 22:
+            if iterator > 19:
                 index = 1
             images = []
             for file_iter, file in enumerate(sorted(files, key=numericalSort)):
@@ -318,7 +319,7 @@ def save_to_directory(instances, path):
         while path_created == False:
             try:
                 local_path = path + "/Instance_" + str(n) + "/"
-                os.mkdir(local_path)
+                os.makedirs(local_path, replace=True)
                 path_created = True
             except:
                 n += 1

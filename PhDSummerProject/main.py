@@ -70,7 +70,7 @@ def on_press(key):
                 selected_function = get_silhouettes
                 verbosity_selection(max_verbose = 2)
             elif current_menu == 1:
-                remove_background_images('./Images/Archive/Background_clean_test')
+                remove_background_images('./Images/Instances')
                 main()
                 print("backgrounds removed sucessfully.")
             elif current_menu == 2:
@@ -83,9 +83,10 @@ def on_press(key):
                 
         if key.char == '3':
             if current_menu == 0:
-                #GEI.create_standard_GEI('./Images/GraphCut', './Images/GEI/GraphCut/')
-                #GEI.create_standard_GEI('./Images/SpecialSilhouettes', './Images/GEI/SpecialSilhouettes/')
+                GEI.create_standard_GEI('./Images/GraphCut', './Images/GEI/GraphCut/')
+                GEI.create_standard_GEI('./Images/SpecialSilhouettes', './Images/GEI/SpecialSilhouettes/')
                 GEI.create_standard_GEI('./Images/Masks', './Images/GEI/Masks/', mask = True)
+                main()
             elif current_menu == 1:
                 if sys.version_info[:3] > (3, 7, 0):
                     print("true")
@@ -97,16 +98,17 @@ def on_press(key):
                     print("CNN-based segmentation complete")
                 else:
                     print("Wrong version of python: cannot complete operation, you need python 3.7 or higher.")
-            else:
+            elif current_menu == 2:
                 selected_function = None
-
-            main()
+            elif current_menu == 3:
+                main()
         if key.char == '4':
             if current_menu == 0:
                 #Three options for creating FFGEIS
-                #GEI.create_FF_GEI('./Images/GraphCut', './Images/FFGEI/GraphCut/')
-                #GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
+                GEI.create_FF_GEI('./Images/GraphCut', './Images/FFGEI/GraphCut/')
+                GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
                 GEI.create_FF_GEI('./Images/Masks', './Images/FFGEI/Masks/', mask = True)
+                main()
             elif current_menu == 1:
                 batch_size = 3
                 epoch = 15
@@ -134,14 +136,32 @@ def on_press(key):
                 #FFGEI imbued with HOG, all 4099 long, run for 3 epochs, batch size 50
                 #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/SpecialSilhouettes' -
                 #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/Mask' -
-            main()
-            print("network training and testing complete")
+            elif current_menu == 3:
+                print("creating HOGFFGEI")
+                create_HOGFFGEI(FFGEI_path='./Images/FFGEI/Unravelled/Masks', HOG_path='./Images/FFGEI/Unravelled/HOG_silhouettes',
+                                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/Mask/')
+                
+                create_HOGFFGEI(FFGEI_path='./Images/FFGEI/Unravelled/SpecialSilhouettes', HOG_path='./Images/FFGEI/Unravelled/HOG_silhouettes',
+                                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/SpecialSilhouettes/')
+                main()
+            #print("network training and testing complete")
         if key.char == '5':
             if current_menu == 0:
                 ImageProcessor.get_silhouettes('./Images/Instances', HOG=True)
+                main()
             elif current_menu == 1:
                 generate_labels('./Images/FFGEI/Graphcut', out='./Labels/FFGEI_graphcut_labels.csv')
-            main()
+                generate_labels('./Images/FFGEI/SpecialSilhouettes', out='./Labels/FFGEI_labels.csv')
+                generate_labels('./Images/GEI/Masks', out='./Labels/labels.csv')
+                main()
+            elif current_menu == 3:
+                unravel_FFGEI(path='./Images/FFGEI/Unravelled/Masks')
+                unravel_FFGEI(path='./Images/FFGEI/Unravelled/GraphCut')
+                unravel_FFGEI(path='./Images/FFGEI/Unravelled/SpecialSilhouettes')
+                unravel_FFGEI(path='./Images/FFGEI/Unravelled/HOG_silhouettes')
+
+                #unravel FFGEIs
+                main()
         if key.char == '6':
             if current_menu == 0:
                 ImageProcessor.create_special_silhouettes()
@@ -149,7 +169,8 @@ def on_press(key):
                 print("Special silhouettes created.")
             elif current_menu == 1:
                 Experimental_Functions.process_input_video('./Images/Instances/Instance_0.0', './Images/Masks/Instance_0.0')
-            else:
+            elif current_menu == 3:
+                print("test for menu")
                 main()
         if key.char == '7':
             if current_menu == 0:
@@ -166,10 +187,11 @@ def on_press(key):
             elif current_menu == 1:
                 extended_menu(3, page_3)
         if key.char == '9':
-            if current_menu == 0:
-                return False
-            elif current_menu == 1:
+            print("clicked 9: ", current_menu)
+            if current_menu == 1:
                 main()
+            else:
+                return False
 
 #Verbosity selection for camera and image processing functions
 def verbosity_selection(max_verbose = 1):
@@ -228,7 +250,9 @@ page_3 = """Select on of the following options:
 
 1. Generate instance lengths
 2. Test file decimation and sending system
-3. Back"""
+3. Back
+4. Create HOGFFGEIs
+5. Unravel FFGEIs"""
 
 def main(error_message = None, init = False):
     global current_menu
@@ -239,11 +263,12 @@ def main(error_message = None, init = False):
 
     print(page_0)
 
-    with Listener(on_press=on_press) as listener:
-        try:
-            listener.join()
-        except:
-            print("program ended, listener closing")
+    if init == True:
+        with Listener(on_press=on_press) as listener:
+            try:
+                listener.join()
+            except:
+                print("program ended, listener closing")
 
 if __name__ == '__main__':
     #Main menu

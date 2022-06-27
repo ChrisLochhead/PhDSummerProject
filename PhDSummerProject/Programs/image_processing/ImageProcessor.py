@@ -71,6 +71,13 @@ def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Ima
                 background_based_silhouette = cv2.threshold(background_based_silhouette, 100, 255, cv2.THRESH_BINARY)[1]
                 *_, bk_mask = cv2.threshold(background_based_silhouette, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                 opening = cv2.morphologyEx(bk_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+
+                # Retrieve and dilate the mask to prevent parts of the body being excluded
+                if single == False:
+                    mask = mask_instances[iterator - 1][file_iter]
+                else:
+                    mask = mask_instances[file_iter]
+
                 bk_expanded = cv2.dilate(mask, kernel, iterations=5)
                 bk_mask_test = cv2.bitwise_and(opening, opening, mask=bk_expanded)
 
@@ -79,12 +86,6 @@ def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Ima
                 edge_based_silhouette = edgeImg_8u * bk_expanded
                 edge_based_silhouette = cv2.morphologyEx(edge_based_silhouette, cv2.MORPH_CLOSE, kernel)
                 edge_based_silhouette = cv2.morphologyEx(edge_based_silhouette, cv2.MORPH_OPEN, kernel)
-
-                # Retrieve and dilate the mask to prevent parts of the body being excluded
-                if single == False:
-                    mask = mask_instances[iterator - 1][file_iter]
-                else:
-                    mask = mask_instances[file_iter]
 
                 #Get copy of the mask and turn into an actual mask (from range 0-1)
                 temp_mask = copy.deepcopy(mask)
@@ -118,8 +119,9 @@ def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Ima
                 combined_example = cv2.addWeighted(bk_mask_test, alpha, combined_example, beta, 0.0)
                 image_example =  Image.fromarray(combined_example)
                 image_example = image_example.filter(ImageFilter.ModeFilter(size=5))
-                ilhouettes.append(np.array(image_example))
+                silhouettes.append(np.array(image_example))
             special_silhouettes.append(silhouettes)
+            print("silhouette complete")
             #If a single image has been passed instead of a whole instance, return after one iteration
             if single == True:
                 return silhouettes
@@ -263,7 +265,7 @@ def get_silhouettes(path, verbose = 0, HOG = False):
                     processed_instances.append(process_image(gray_img, raw_images[file_iter], verbose, subtractor))
                 else:
                     print("processing folder: ", iterator, ": ", file_iter)
-                    processed_instances.append(process_HOG_image(get_HOG_image(gray_img), gray_img, HOG_background, verbose, subtractor, mask_instances[iterator-1][file_iter]))
+                    processed_instances.append(process_HOG_image(get_HOG_image(gray_img), HOG_background, mask_instances[iterator-1][file_iter]))
 
             processed_images.append(processed_instances)
     # Processed images taken, save to location
@@ -280,7 +282,7 @@ def get_silhouettes(path, verbose = 0, HOG = False):
                 else:
                     local_path = './Images/HOG_silhouettes' + "/Instance_" + str(n) + "/"
 
-                os.mkdir(local_path)
+                os.makedirs(local_path, exist_ok=True)
                 path_created = True
             except:
                 n += 1
