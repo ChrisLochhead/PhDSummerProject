@@ -29,7 +29,7 @@ class Camera:
         # Configure depth and color streams
         self.pipeline = rs.pipeline()
         self.file_count = 0
-        self.file_limit = 3
+        self.file_limit = 3000
         config = rs.config()
         if depth:
             config.enable_stream(rs.stream.depth, 424, 240, rs.format.z16, 15) # original 640 by 480
@@ -103,6 +103,7 @@ class Camera:
         s1 = 0.0
         seen_human = False
         seen_human_previous = False
+        objs_last_frame = 0
         local_path = ""
         current_image_array = []
 
@@ -112,11 +113,9 @@ class Camera:
             while break_program == False:
 
                 #Check if time is appropriate for monitoring
-                print("making it here")
                 now = datetime.datetime.now()
-                print("now  : ", now)
                 morning_limit = now.replace(hour=8, minute=0, second=0, microsecond=0)
-                evening_limit = now.replace(hour=10, minute=37, second=0, microsecond=0)
+                evening_limit = now.replace(hour=22, minute=37, second=0, microsecond=0)
                 if now < morning_limit or now > evening_limit:
                     break_program = True
 
@@ -146,11 +145,12 @@ class Camera:
                 #Only scan for humans every 3 frames, or 5 seconds after a human was detected.
                 if verbose > 0:
                     if i%3 == 0 and s1 == 0.0 or time.time() - s1 >= 5.0:
-                        if verbose > 0:
-                            print("scanning for humans")
+                        #if verbose > 0:
+                            #print("scanning for humans")
                         #Get humans
                         objs = JetsonYolo.get_objs_from_frame(np.asarray(refined_img), False)
                         seen_human = False
+                        
 
                         #Detector only returns human objs
                         if len(objs) == 1:
@@ -160,32 +160,36 @@ class Camera:
                                 human_stationary = True
                                 seen_human = False
                             else:
-                                print("found new human")
-                                seen_human = True
-                                s1 = time.time()
+                                if objs_last_frame == 0:
+                                    print("found new human")
+                                    seen_human = True
+                                    s1 = time.time()
                         else:
                             if human_stationary == True:
                                 print("resetting found human")
                                 human_stationary = False
                                 human_detected_count = 0
+                        
+                        objs_last_frame = len(objs)
 
 
                 #Debug
                 debug_img, not_used = JetsonYolo.plot_obj_bounds(objs, np.asarray(refined_img))
-                #refined_img = np.asarray(debug_img)
-                refined_img = np.asarray(refined_img)
+                refined_img = np.asarray(debug_img)
+                #refined_img = np.asarray(refined_img)
+            
 
                 i += 1
                 #Print FPS
                 if i%10 == 0 and verbose > 0:
                     st = time.time()
-                    print('FPS: ' + str(i/(st - s0)))
+                    #print('FPS: ' + str(i/(st - s0)))
 
                 #Show images
                 if verbose > 0:
                     cv2.imshow('RealSense', refined_img)
                     cv2.waitKey(1)
-                    
+                
                 if seen_human:
                     if seen_human_previous == False:
                         #Create a new local path so each instance has it's own folder
@@ -198,7 +202,6 @@ class Camera:
                                 path_created = True
                             except:
                                 n+=1
-
                         #Save image, add buffer to array to be saved
                         im_name = str(int(time.time() * 1000)) + '.jpg'
                         cv2.imwrite(local_path + im_name, refined_img)
@@ -230,7 +233,6 @@ class Camera:
 
                         #clearing buffer
                         current_image_array.clear()
-
                     image_buffer.append((refined_img, '0_buffer_image_{:.3f}'.format(time.time()) + '.jpg'))
                     #Keep the buffer at 5 frames long
                     if len(image_buffer) > 5:
@@ -242,5 +244,3 @@ class Camera:
             finally:
                 quit()
   
-
-
