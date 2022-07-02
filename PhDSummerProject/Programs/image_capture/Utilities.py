@@ -138,16 +138,26 @@ def get_tiles(image_array):
 def most_frequent(List):
     return max(set(List), key=List.count)
 
-def generate_instance_lengths(path, out_path):
+def generate_instance_lengths(path, out_path, ignore_first = False, make_GEI = True):
     instance_lengths = []
+    gei_lengths = []
     #Get length of each instance
-    for iter, (dirpath, dirnames, filenames) in enumerate(os.walk(path)):
+    exclude = set(['Test', 'FewShot', 'Debug'])
+
+    for iter, (dirpath, dirnames, filenames) in enumerate(os.walk(path, topdown = True)):
+        if ignore_first == True:
+            dirnames[:] = [d for d in dirnames if d not in exclude]
         for dirs in sorted(dirnames, key=numericalSort):
             list = os.listdir(os.path.join(path, dirs))
+            print("dirs,", dirs)
             instance_lengths.append([iter, int(len(list))])
+            if make_GEI == True:
+                gei_lengths.append([iter, 1])
     #Save files indexed by instance
     os.makedirs(out_path, exist_ok=True)
     np.savetxt( out_path + 'indices.csv', instance_lengths, fmt='%i', delimiter=",")
+    if make_GEI == True:
+        np.savetxt(out_path + 'GEI.csv', gei_lengths, fmt='%i', delimiter=',')
 
 def get_bounding_box(image):
     contours, hierarchy = cv2.findContours(image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)[-2:]
@@ -244,27 +254,33 @@ def unravel_FFGEI(path = './Images/FFGEI/Unravelled/Mask'):
             for file_iter, file in enumerate(sorted(files, key=numericalSort)):
                 os.rename(os.path.join(subdir, file), os.path.join(subdir, file).replace('z', ''))
 
-#Generate labels from processed images {0: chris, 1: claire}
-def generate_labels(path, out):
+#Generate labels from processed images {0: chris, 1: claire}, chris is first in the fewShot dataset
+def generate_labels(path, out, name, cutoff = 19, cutoff_index = 1):
     data = [['ID', 'Class']]
     global_iter = 0
     for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
         dirs.sort(key=numericalSort)
-        print("directory: ", iterator, subdir)
+        print("directory: ", iterator, subdir, dir)
         if len(files) > 0:
             #Claire is index 1 - 20, Chris is the rest
-            index = 0
-            if iterator > 19:
+            if cutoff_index == 1:
+                index = 0
+            else:
                 index = 1
+
+            if iterator > cutoff:
+                index = cutoff_index
             images = []
+            print("in here, ", subdir)
             for file_iter, file in enumerate(sorted(files, key=numericalSort)):
                 data.append([global_iter, index])#image = cv2.imread(os.path.join(subdir, file))
                 global_iter += 1
         else:
             print("directory empty, iterating")
             
-    os.makedirs(path, exist_ok=True)
-    np.savetxt(out, data, delimiter=",", fmt='%s')
+    os.makedirs(out, exist_ok=True)
+    np.savetxt(out + name, data, delimiter=",", fmt='%s')
+    print("end global iter: ", global_iter)
 
 #Remove backgrounds in raw images to cut down on processing time
 def remove_background_images(path):
@@ -297,9 +313,11 @@ def make_directory(dir, text = "Couldn't make directory" ):
     os.makedirs(dir, exist_ok=True)
 
 #For standard instances of extracting an array of images from an array of folders
-def get_from_directory(path):
+def get_from_directory(path, exclusion = set(['FewShot'])):
     instances = []
     for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
+        if exclusion:
+            dirs[:] = [d for d in dirs if d not in exclusion]
         dirs.sort(key = numericalSort)
         if len(files) > 0:
             images = []
@@ -318,10 +336,12 @@ def save_to_directory(instances, path):
         n = 0.0
         while path_created == False:
             try:
+                print("making path")
                 local_path = path + "/Instance_" + str(n) + "/"
-                os.makedirs(local_path, replace=True)
+                os.mkdir(local_path)
                 path_created = True
             except:
+                print("invalid")
                 n += 1
         for i, image in enumerate(instance):
             cv2.imwrite(local_path + str(i) + ".jpg", image)

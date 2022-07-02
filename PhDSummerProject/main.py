@@ -14,6 +14,7 @@ import GEI
 import LocalResnet
 import Experiment_Functions
 import File_Decimation
+import Ensemble
 
 #Torch
 import torch
@@ -61,10 +62,15 @@ def on_press(key):
                 #main()
             elif current_menu == 3:
                 # normal and graphcut the only differing values as graphcut is the only function to discard frames.
-                generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/normal/' )
+                generate_instance_lengths('./Images/SpecialSilhouettes', './Instance_Counts/Normal/', ignore_first = True )
+                generate_instance_lengths('./Images/GraphCut', './Instance_Counts/Graphcut/', ignore_first = True  )
+
+                #Few Shot
+                generate_instance_lengths('./Images/SpecialSilhouettes/FewShot', './Instance_Counts/FewShot/Normal/' )
+                generate_instance_lengths('./Images/GraphCut/FewShot', './Instance_Counts/FewShot/GraphCut/' )
                 main()
                 print("instance indices generated")
-                
+
         if key.char == '2':
             if current_menu == 0:
                 selected_function = get_silhouettes
@@ -80,18 +86,23 @@ def on_press(key):
                 #Conduct file decimation and upload test
                 File_Decimation.decimate_and_send()
                 main()
-                
+
         if key.char == '3':
             if current_menu == 0:
+                #Standard database
                 GEI.create_standard_GEI('./Images/GraphCut', './Images/GEI/GraphCut/')
                 GEI.create_standard_GEI('./Images/SpecialSilhouettes', './Images/GEI/SpecialSilhouettes/')
                 GEI.create_standard_GEI('./Images/Masks', './Images/GEI/Masks/', mask = True)
+                #FewShot data
+                GEI.create_standard_GEI('./Images/GraphCut/FewShot', './Images/GEI/FewShot/GraphCut/')
+                GEI.create_standard_GEI('./Images/SpecialSilhouettes/FewShot', './Images/GEI/FewShot/SpecialSilhouettes/')
+                GEI.create_standard_GEI('./Images/Masks/FewShot', './Images/GEI/FewShot/Masks/', mask = True)
                 main()
             elif current_menu == 1:
                 if sys.version_info[:3] > (3, 7, 0):
                     print("true")
                     cnn_segmenter = maskcnn.CNN_segmenter()
-                    cnn_segmenter.load_images('./Images/Instances')
+                    cnn_segmenter.load_images('./Images/FewShot')#Instances')
                     print("images loaded")
                     masks = cnn_segmenter.detect()
                     main()
@@ -105,10 +116,13 @@ def on_press(key):
         if key.char == '4':
             if current_menu == 0:
                 #Three options for creating FFGEIS
-                GEI.create_FF_GEI('./Images/GraphCut', './Images/FFGEI/GraphCut/')
-                GEI.create_FF_GEI('./Images/SpecialSilhouettes', './Images/FFGEI/SpecialSilhouettes/')
-                GEI.create_FF_GEI('./Images/Masks', './Images/FFGEI/Masks/', mask = True)
-                main()
+                print("stage 1")
+                GEI.create_FF_GEI('./Images/GraphCut/FewShot', './Images/FFGEI/GraphCut/FewShot/')
+                print("stage 2")
+                GEI.create_FF_GEI('./Images/SpecialSilhouettes/FewShot', './Images/FFGEI/SpecialSilhouettes/FewShot/')
+                print("stage 3")
+                GEI.create_FF_GEI('./Images/Masks/FewShot', './Images/FFGEI/Masks/FewShot/', mask = True)
+                #main()
             elif current_menu == 1:
                 batch_size = 3
                 epoch = 15
@@ -117,12 +131,13 @@ def on_press(key):
                                                                         targetTransform = target,
                                                                         labels = './labels/labels.csv',
                                                                         images = './Images/GEI/SpecialSilhouettes',
-                                                                        sizes = './Instance_Counts/normal/GEI.csv',
+                                                                        sizes = './Instance_Counts/Normal/GEI.csv',
                                                                         batch_size = batch_size,
                                                                         FFGEI = False)
                 print("datasets prepared sucessfully")
-                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/FFGEI/GraphCut/', model_path = './Models/FFGEI_GraphCut/')
-                #Experiments:
+                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/GEI/SpecialSilhouettes/', model_path = './Models/GEI_SpecialSilhouettes/')
+                #Experiments:, do once with normal then once with few-shot 
+                
                 #GEI experiments:
                 #'./Labels/labels.csv,' './Images/GEI/SpecialSilhouettes' #All 42 long, run for 15 epochs, batch size 3 -
                 #'./Labels/labels.csv,' './Images/GEI/GraphCut'
@@ -147,12 +162,14 @@ def on_press(key):
             #print("network training and testing complete")
         if key.char == '5':
             if current_menu == 0:
+                #ImageProcessor.get_silhouettes('./Images/FewShot', HOG=True, few_shot = True)
                 ImageProcessor.get_silhouettes('./Images/Instances', HOG=True)
                 main()
             elif current_menu == 1:
-                generate_labels('./Images/FFGEI/Graphcut', out='./Labels/FFGEI_graphcut_labels.csv')
-                generate_labels('./Images/FFGEI/SpecialSilhouettes', out='./Labels/FFGEI_labels.csv')
-                generate_labels('./Images/GEI/Masks', out='./Labels/labels.csv')
+                #Treat the cutoff as if the iterator starts at 1 because folder 0 is always empty.
+                generate_labels('./Images/FFGEI/Graphcut', out='./Labels/', name = 'FFGEI_graphcut_labels.csv', cutoff = 20, cutoff_index = 1)
+                generate_labels('./Images/FFGEI/SpecialSilhouettes', out='./Labels/', name = 'FFGEI_labels.csv', cutoff = 20, cutoff_index = 1)
+                generate_labels('./Images/GEI/Masks', out='./Labels/', name = 'labels.csv', cutoff = 20, cutoff_index = 1)
                 main()
             elif current_menu == 3:
                 unravel_FFGEI(path='./Images/FFGEI/Unravelled/Masks')
@@ -161,6 +178,10 @@ def on_press(key):
                 unravel_FFGEI(path='./Images/FFGEI/Unravelled/HOG_silhouettes')
 
                 #unravel FFGEIs
+                #unravel_FFGEI(path='./Images/FFGEI/Unravelled/GraphCut')
+                #unravel_FFGEI(path='./Images/FFGEI/Unravelled/SpecialSilhouettes')
+                #unravel_FFGEI(path='./Images/FFGEI/Unravelled/HOG_silhouettes')
+                
                 main()
         if key.char == '6':
             if current_menu == 0:
@@ -181,13 +202,29 @@ def on_press(key):
                 Experiment_Functions.compare_ground_truths('./Images/Ground Truths', ['./Images/SpecialSilhouettes', './Images/Masks', './Images/GraphCut'])
                 main()
                 print("ground truth comparison completed.")
+            elif current_menu == 3:
+                #def few_shot_ensemble_experiment(n, data_path, few_shot_path):
+                batch_size = 3
+                epoch = 15
+                target = Lambda(
+                    lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
+                train_val_loader, test_loader = Ensemble.split_data_n_folds(num_folds = 3,
+                                                                            sourceTransform=ToTensor(),
+                                                                            targetTransform=target,
+                                                                            sizes='./Instance_Counts/normal/GEI.csv',
+                                                                            batch_size=batch_size,
+                                                                            FFGEI=False,
+                                                                            datapath='./Images/GEI/SpecialSilhouettes',
+                                                                            labelpath='./labels/labels.csv')
+
+                #def split_data_n_folds(num_folds, sourceTransform, targetTransform, sizes, batch_size, data=None,
+                #                       FFGEI=False, datapath='None', labelpath='None'
         if key.char == '8':
             if current_menu == 0:
                 extended_menu(1, page_1)
             elif current_menu == 1:
                 extended_menu(3, page_3)
         if key.char == '9':
-            print("clicked 9: ", current_menu)
             if current_menu == 1:
                 main()
             else:
@@ -252,7 +289,9 @@ page_3 = """Select on of the following options:
 2. Test file decimation and sending system
 3. Back
 4. Create HOGFFGEIs
-5. Unravel FFGEIs"""
+5. Unravel FFGEIs
+6. menu debug
+7. few-shot ensemble learning"""
 
 def main(error_message = None, init = False):
     global current_menu

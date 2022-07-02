@@ -162,6 +162,8 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
+def ResNet18(img_channel=1, num_classes=2):
+    return ResNet(block, [2, 2, 2, 2], img_channel, num_classes)
 
 def ResNet50(img_channel=1, num_classes=2):
     return ResNet(block, [3, 4, 6, 3], img_channel, num_classes)
@@ -196,7 +198,6 @@ class CustomDataset(torch.utils.data.Dataset):
         image = sk.imread(imagePath)
         image = Image.fromarray(image)
         image = np.asarray(image)
-
         #IF FFGEI, pre-flatten image
         if self.FFGEI:
             #Transform into tiles
@@ -280,7 +281,7 @@ def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_p
     num_epochs = epoch
 
     # Initialize network
-    model = ResNet50(img_channel=1, num_classes=num_classes)
+    model = ResNet18(img_channel=1, num_classes=num_classes)
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -374,7 +375,7 @@ def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_p
     frame.to_csv(out_path + "results.csv")
     return model
 
-    # Check accuracy on training & test to see how good our model
+# Check accuracy on training & test to see how good our model
 def evaluate_model(loader, model, debug = False):
     num_correct = 0
     num_samples = 0
@@ -426,6 +427,8 @@ def evaluate_model(loader, model, debug = False):
                         false_pos += 1
 
             #Also save the predictions in order for the video test
+            print("predictions: ", predictions)
+            print(predictions.item())
             prediction_array.append(predictions.item())
             num_samples += predictions.size(0)
 

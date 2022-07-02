@@ -33,7 +33,7 @@ def edge_detect (channel):
     sobel[sobel > 255] = 255;
     return sobel
    
-def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Images/Instances', masks = None, single = False):
+def create_special_silhouettes(mask_path = './Images/Masks/FewShot', image_path = './Images/FewShot', masks = None, single = False):
     #Allow for the passing of pre-loaded silhouettes for the video test function
     if masks == None:
         mask_instances = get_from_directory(mask_path)
@@ -126,16 +126,16 @@ def create_special_silhouettes(mask_path = './Images/Masks', image_path = './Ima
             if single == True:
                 return silhouettes
     #Save
-    save_to_directory(special_silhouettes, './Images/SpecialSilhouettes')
+    save_to_directory(special_silhouettes, './Images/SpecialSilhouettes/FewShot')
     print("operation complete, special silhouettes saved")
     return special_silhouettes
 
 #Graph cut
-def graph_cut(mask_path = './Images/Masks', image_path = './Images/Instances', by_mask = True, mask_edges = True, masks = None):
+def graph_cut(mask_path = './Images/Masks/FewShot', image_path = './Images/FewShot', by_mask = True, mask_edges = True, masks = None):
 
     #Adjust save path depending on which combination is used to create it. The best reults are hard-coded into the definition
     if by_mask and mask_edges:
-        save_path = './Images/GraphCut'
+        save_path = './Images/GraphCut/FewShot'
     elif by_mask and not mask_edges:
         save_path = './Images/graph_mask_noedges'
     elif not by_mask and mask_edges:
@@ -240,7 +240,7 @@ def process_image(image, raw_img, verbose = 0, subtractor = None):
     white_mask = cv2.inRange(image, 180, 255)
     return np.asarray(align_image(white_mask, 0)) # was image
 
-def get_silhouettes(path, verbose = 0, HOG = False):
+def get_silhouettes(path, verbose = 0, HOG = False, few_shot = False):
     global HOG_background
     mask_instances = get_from_directory('./Images/Masks')
     make_directory(path, "Silhouette folder already exists")
@@ -264,7 +264,7 @@ def get_silhouettes(path, verbose = 0, HOG = False):
                 if HOG == False:
                     processed_instances.append(process_image(gray_img, raw_images[file_iter], verbose, subtractor))
                 else:
-                    print("processing folder: ", iterator, ": ", file_iter)
+                    print("processing folder: ", iterator, ": ", file_iter, ": ", subdir, dir)
                     processed_instances.append(process_HOG_image(get_HOG_image(gray_img), HOG_background, mask_instances[iterator-1][file_iter]))
 
             processed_images.append(processed_instances)
@@ -277,12 +277,15 @@ def get_silhouettes(path, verbose = 0, HOG = False):
         n = 0.0
         while path_created == False:
             try:
-                if HOG == False:
+                if HOG == False and few_shot == False:
                     local_path = './Images/Silhouettes' + "/Instance_" + str(n) + "/"
-                else:
+                elif HOG == True and few_shot == False:
                     local_path = './Images/HOG_silhouettes' + "/Instance_" + str(n) + "/"
-
-                os.makedirs(local_path, exist_ok=True)
+                elif HOG == False and few_shot == True:
+                    local_path = './Images/HOG_silhouettes/FewShot' + "/Instance_" + str(n) + "/"
+                elif HOG == True and few_shot == True:
+                    local_path = './Images/HOG_silhouettes/FewShot' + "/Instance_" + str(n) + "/"
+                os.makedirs(local_path, exist_ok=False)
                 path_created = True
             except:
                 n += 1

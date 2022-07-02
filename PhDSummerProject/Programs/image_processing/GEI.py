@@ -82,7 +82,7 @@ def create_FF_GEI(silhouette_path, destination_path, mask = False, single = Fals
             for i, FFGEI in enumerate(FF_GEIS):
                 cv2.imwrite(destination_path + "instance_" + str(index) + "/" + str(i) + ".jpg", FFGEI)
 
-def create_standard_GEI(path, destination_path, mask = False):
+def create_standard_GEI(path, destination_path, mask = False, exclude = set(['Test', 'FewShot', 'Debug'])):
     #Create destination path
     os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
     #Create one file to save all GEI's
@@ -92,6 +92,7 @@ def create_standard_GEI(path, destination_path, mask = False):
     #Gather all of the available silhouettes
     for instance, (subdir, dirs, files) in enumerate(os.walk(path)):
         raw_silhouettes = []
+        dirs[:] = [d for d in dirs if d not in exclude]
         dirs.sort(key=Utilities.numericalSort)
         if len(files) > 0:
             for file in sorted(files, key = Utilities.numericalSort):
@@ -114,7 +115,7 @@ def create_standard_GEI(path, destination_path, mask = False):
                             GEI = cv2.addWeighted(silhouette, alpha, GEI, beta, 0.0)
 
                 #Save GEI
-                cv2.imwrite(destination_path + str(instance) + ".jpg", GEI)
+                cv2.imwrite(destination_path + str(instance-1) + ".jpg", GEI)
                 #Debug
                 #cv2.imshow("GEI", GEI)
                 #key = cv2.waitKey(0) & 0xff
