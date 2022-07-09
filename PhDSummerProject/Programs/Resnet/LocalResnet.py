@@ -226,6 +226,11 @@ def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, 
     #Initialise data paths and check sizes
     os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
     dataset = CustomDataset(labels, images, sourceTransform, targetTransform, FFGEI)
+    print("dataset length: ", len(dataset))
+    #for idx, (data, image) in enumerate(dataset):
+    #    print("trying once")
+    #    print(idx)
+        
     df = pd.read_csv(sizes, sep=',',header=None)
     instance_sizes = df.values
 
@@ -260,8 +265,14 @@ def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, 
     #print("train indices, ", len(true_train_indices))
 
     #Pass the indices through as usual to create the subsets
+    print(true_train_indices)
+    print(true_test_indices)
     train_data = torch.utils.data.Subset(dataset, true_train_indices)
     test_data = torch.utils.data.Subset(dataset, true_test_indices)
+    print(type(true_train_indices), len(true_train_indices), "length here??", len(dataset))
+    for idx, (data, image) in enumerate(train_data):
+        print("trying once")
+        print(idx)
 
     #Create dataloaders for training/validation set and test set.
     train_val_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
@@ -281,7 +292,7 @@ def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_p
     num_epochs = epoch
 
     # Initialize network
-    model = ResNet18(img_channel=1, num_classes=num_classes)
+    model = ResNet50(img_channel=1, num_classes=num_classes)
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -309,6 +320,7 @@ def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_p
             data_loader,
             batch_size=batch_size, sampler=val_subsampler)
 
+        print("----------------------------------------------------------------type: ", type(trainloader))
         # Init the neural network
         network = ResNet50(img_channel=1, num_classes=num_classes)
         network.apply(reset_weights)
@@ -396,6 +408,7 @@ def evaluate_model(loader, model, debug = False):
 
     with torch.no_grad():
         for x, y in loader:
+            print("what im working with: ", x, y )
             x = x.to(device=my_device)
             y = y.to(device=my_device)
             scores = model(x)
@@ -427,9 +440,11 @@ def evaluate_model(loader, model, debug = False):
                         false_pos += 1
 
             #Also save the predictions in order for the video test
-            print("predictions: ", predictions)
-            print(predictions.item())
-            prediction_array.append(predictions.item())
+            for pred in predictions:
+                prediction_array.append(pred.item())
+            #print("predictions: ", predictions, predictions.size(0), )
+            #print(predictions.item())
+            #prediction_array.append(predictions.item())
             num_samples += predictions.size(0)
 
 

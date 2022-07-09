@@ -124,33 +124,34 @@ def on_press(key):
                 GEI.create_FF_GEI('./Images/Masks/FewShot', './Images/FFGEI/Masks/FewShot/', mask = True)
                 #main()
             elif current_menu == 1:
-                batch_size = 3
-                epoch = 15
+                batch_size = 50
+                epoch = 3
                 target = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
                 train_val_loader, test_loader= LocalResnet.create_dataloaders(sourceTransform=ToTensor(),
                                                                         targetTransform = target,
                                                                         labels = './labels/labels.csv',
-                                                                        images = './Images/GEI/SpecialSilhouettes',
+                                                                        images = './Images/GEI/Masks',
                                                                         sizes = './Instance_Counts/Normal/GEI.csv',
                                                                         batch_size = batch_size,
                                                                         FFGEI = False)
                 print("datasets prepared sucessfully")
-                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/GEI/SpecialSilhouettes/', model_path = './Models/GEI_SpecialSilhouettes/')
+                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/HOGFFGEI/Mask/Test/', model_path = './Models/HOGFFGEI_Mask/Test/')
+                main()
                 #Experiments:, do once with normal then once with few-shot 
                 
                 #GEI experiments:
-                #'./Labels/labels.csv,' './Images/GEI/SpecialSilhouettes' #All 42 long, run for 15 epochs, batch size 3 -
-                #'./Labels/labels.csv,' './Images/GEI/GraphCut'
-                #'./Labels/labels.csv,' './Images/GEI/Masks' -
+                #'./Labels/labels.csv,' './Images/GEI/SpecialSilhouettes' #All 42 long, run for 15 epochs, batch size 3 - done
+                #'./Labels/labels.csv,' './Images/GEI/GraphCut' - done
+                #'./Labels/labels.csv,' './Images/GEI/Masks' - done
 
                 #FFGEI standard, needs extra code for going into each individual instance folder # All 4099 long, run for 3 epochs, batch size 50
                 #'./labels/FFGEI_labels.csv' './Images/FFGEI/Unravelled/SpecialSilhouettes', './Models/FFGEI_Special/' - done
                 #'./labels/FFGEI_labels.csv' './Images/FFGEI/Unravelled/Masks' - done
-                #'./labels/FFGEI_graphcut_labels.csv' './Images/FFGEI/Unravelled/GraphCut' -
+                #'./labels/FFGEI_graphcut_labels.csv' './Images/FFGEI/Unravelled/GraphCut' - done
                 
                 #FFGEI imbued with HOG, all 4099 long, run for 3 epochs, batch size 50
-                #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/SpecialSilhouettes' -
-                #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/Mask' -
+                #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/SpecialSilhouettes' - done
+                #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/Mask' - done
             elif current_menu == 3:
                 print("creating HOGFFGEI")
                 create_HOGFFGEI(FFGEI_path='./Images/FFGEI/Unravelled/Masks', HOG_path='./Images/FFGEI/Unravelled/HOG_silhouettes',
@@ -203,22 +204,10 @@ def on_press(key):
                 main()
                 print("ground truth comparison completed.")
             elif current_menu == 3:
-                #def few_shot_ensemble_experiment(n, data_path, few_shot_path):
-                batch_size = 3
-                epoch = 15
-                target = Lambda(
-                    lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
-                train_val_loader, test_loader = Ensemble.split_data_n_folds(num_folds = 3,
-                                                                            sourceTransform=ToTensor(),
-                                                                            targetTransform=target,
-                                                                            sizes='./Instance_Counts/normal/GEI.csv',
-                                                                            batch_size=batch_size,
-                                                                            FFGEI=False,
-                                                                            datapath='./Images/GEI/SpecialSilhouettes',
-                                                                            labelpath='./labels/labels.csv')
-
-                #def split_data_n_folds(num_folds, sourceTransform, targetTransform, sizes, batch_size, data=None,
-                #                       FFGEI=False, datapath='None', labelpath='None'
+                #GEI experiments:
+                #SpecialSilhouette
+                Ensemble.few_shot_ensemble_experiment(3, batch_size = 3, epoch = 15)
+                main()
         if key.char == '8':
             if current_menu == 0:
                 extended_menu(1, page_1)
