@@ -154,11 +154,19 @@ def on_press(key):
                 #'./labels/FFGEI_labels.csv' './Images/HOGFFGEI/Mask' - done
             elif current_menu == 3:
                 print("creating HOGFFGEI")
-                create_HOGFFGEI(FFGEI_path='./Images/FFGEI/Unravelled/Masks', HOG_path='./Images/FFGEI/Unravelled/HOG_silhouettes',
-                                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/Mask/')
+                #create_HOGFFGEI(FFGEI_path='./Images/FFGEI/Unravelled/Masks', HOG_path='./Images/FFGEI/Unravelled/HOG_silhouettes',
+                #                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/Mask/')
                 
-                create_HOGFFGEI(FFGEI_path='./Images/FFGEI/Unravelled/SpecialSilhouettes', HOG_path='./Images/FFGEI/Unravelled/HOG_silhouettes',
-                                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/SpecialSilhouettes/')
+                #create_HOGFFGEI(FFGEI_path='./Images/FFGEI/Unravelled/SpecialSilhouettes', HOG_path='./Images/FFGEI/Unravelled/HOG_silhouettes',
+                #                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/SpecialSilhouettes/')
+
+                #Create HOGFFGEI: Few-shot
+                #\Images\HOG_silhouettes\FewShot\Unravelled
+                create_HOGFFGEI(FFGEI_path='./Images/FFGEI/FewShot/Unravelled/Masks', HOG_path='./Images/HOG_silhouettes/FewShot/Unravelled',
+                                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/FewShot/Masks/')
+
+                create_HOGFFGEI(FFGEI_path='./Images/FFGEI/FewShot/Unravelled/SpecialSilhouettes', HOG_path='./Images/HOG_silhouettes/FewShot/Unravelled',
+                                label='./Labels/FFGEI_labels.csv', out='./Images/HOGFFGEI/FewShot/SpecialSilhouettes/')
                 main()
             #print("network training and testing complete")
         if key.char == '5':
@@ -182,7 +190,16 @@ def on_press(key):
                 #unravel_FFGEI(path='./Images/FFGEI/Unravelled/GraphCut')
                 #unravel_FFGEI(path='./Images/FFGEI/Unravelled/SpecialSilhouettes')
                 #unravel_FFGEI(path='./Images/FFGEI/Unravelled/HOG_silhouettes')
-                
+
+                #FFGEIs : few-shot
+                #unravel_FFGEI(path='./Images/FFGEI/FewShot/Unravelled/GraphCut')
+                #unravel_FFGEI(path='./Images/FFGEI/FewShot/Unravelled/SpecialSilhouettes')
+                #unravel_FFGEI(path='./Images/FFGEI/FewShot/Unravelled/Masks')
+
+                #HOG-FFGEIs : few-shot
+                #unravel_FFGEI(path='./Images/FFGEI/FewShot/GraphCut/Unravelled')
+                #unravel_FFGEI(path='./Images/FFGEI/FewShot/SpecialSilhouettes/Unravelled')
+                #unravel_FFGEI(path='./Images/HOG_silhouettes/FewShot/Unravelled')
                 main()
         if key.char == '6':
             if current_menu == 0:
