@@ -94,11 +94,6 @@ class Camera:
 
         #Make storage for image captures
         os.makedirs(path, exist_ok=True)
-        #try:
-        #    os.mkdir(path)
-        #except:
-        #    print("folder already exist")
-
         s0 = time.time()
         s1 = 0.0
         seen_human = False
@@ -176,15 +171,11 @@ class Camera:
                 #Debug
                 debug_img, not_used = JetsonYolo.plot_obj_bounds(objs, np.asarray(refined_img))
                 refined_img = np.asarray(debug_img)
-                #refined_img = np.asarray(refined_img)
-            
-
                 i += 1
                 #Print FPS
                 if i%10 == 0 and verbose > 0:
                     st = time.time()
-                    #print('FPS: ' + str(i/(st - s0)))
-
+                    print('FPS: ' + str(i/(st - s0)))
                 #Show images
                 if verbose > 0:
                     cv2.imshow('RealSense', refined_img)

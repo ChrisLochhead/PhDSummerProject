@@ -138,12 +138,12 @@ class CNN_segmenter():
             n = 0.0
             while directory_made == False:
                 try:
-                    os.mkdir(os.getcwd() + "\Images\Masks\Instance" + str(n))
+                    os.mkdir(os.getcwd() + "\Images\Masks\Instance_" + str(n))
                     directory_made = True
                 except:
                     print("already exists: ", n)
                     n += 1
             for i, image in enumerate(instance):
-                cv2.imwrite(os.getcwd() + "\Images\Masks\Instance" + str(n) + "/" + str(i) + ".jpg", image)
+                cv2.imwrite(os.getcwd() + "\Images\Masks\Instance_" + str(n) + "/" + str(i) + ".jpg", image)
 
         return self.mask_image_instances

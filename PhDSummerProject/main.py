@@ -129,13 +129,13 @@ def on_press(key):
                 target = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
                 train_val_loader, test_loader= LocalResnet.create_dataloaders(sourceTransform=ToTensor(),
                                                                         targetTransform = target,
-                                                                        labels = './labels/labels.csv',
-                                                                        images = './Images/GEI/Masks',
-                                                                        sizes = './Instance_Counts/Normal/GEI.csv',
+                                                                        labels = './labels/FFGEI_labels.csv',
+                                                                        images = './Images/HOGFFGEI/SpecialSilhouettes',
+                                                                        sizes = './Instance_Counts/Normal/indices.csv',
                                                                         batch_size = batch_size,
                                                                         FFGEI = False)
                 print("datasets prepared sucessfully")
-                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/HOGFFGEI/Mask/Test/', model_path = './Models/HOGFFGEI_Mask/Test/')
+                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/HOGFFGEI/SpecialSilhouettes/Test/', model_path = './Models/HOGFFGEI_SpecialSilhouettes/Test/')
                 main()
                 #Experiments:, do once with normal then once with few-shot 
                 
@@ -217,7 +217,14 @@ def on_press(key):
                 main()
                 print("Graph cut operation completed.")
             elif current_menu == 1:
-                Experiment_Functions.compare_ground_truths('./Images/Ground Truths', ['./Images/SpecialSilhouettes', './Images/Masks', './Images/GraphCut'])
+                #Ground truth comparison for the regular dataset
+                Experiment_Functions.compare_ground_truths('./Images/Ground Truths/Regular', ['./Images/SpecialSilhouettes', './Images/Masks', './Images/GraphCut'], 
+                                                           ['Instance_5.0', 'Instance_25.0'],
+                                                           out_path = './Results/Ground Truths/Normal/')
+                #Ground truth comparison for the fewshot dataset
+                Experiment_Functions.compare_ground_truths('./Images/Ground Truths/FewShot', ['./Images/SpecialSilhouettes/FewShot', './Images/Masks/FewShot', './Images/GraphCut/FewShot'],
+                                                           ['Instance_1.0', 'Instance_4.0'],
+                                                           out_path = './Results/Ground Truths/FewShot/', few_shot = True)
                 main()
                 print("ground truth comparison completed.")
             elif current_menu == 3:

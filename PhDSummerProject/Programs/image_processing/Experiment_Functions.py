@@ -35,13 +35,6 @@ if sys.version_info[:3] > (3, 7, 0):
 #For printing matplotlib charts from command prompt
 matplotlib.use('TkAgg')
 
-#Assume G is ground truth bounding box and D is data bounding box.
-#Assume that both have been intersected to be the same size with R rows and C columns.
-#Let mG be the mean of pixels in G and sG be the std deviation of the pixels in G.
-#Let mD be the mean of pixels in D and sD be the std deviation of the pixels in D.
-#Then the NCC value is
-#(1/(R*C)) Sum_r Sum_c ((G_rc - mG)/sG) * ((D_rc - mD)/sD)
-
 def norm_cc(ground_truth, image):
     #Shapes
     rows = ground_truth.shape[0]
@@ -66,20 +59,6 @@ def norm_cc(ground_truth, image):
 
 
 def normxcorr2(template, image, mode="full"):
-    """
-    Input arrays should be floating point numbers.
-    :param template: N-D array, of template or filter you are using for cross-correlation.
-    Must be less or equal dimensions to image.
-    Length of each dimension must be less than length of image.
-    :param image: N-D array
-    :param mode: Options, "full", "valid", "same"
-    full (Default): The output of fftconvolve is the full discrete linear convolution of the inputs.
-    Output size will be image size + 1/2 template size in each dimension.
-    valid: The output consists only of those elements that do not rely on the zero-padding.
-    same: The output is the same size as image, centered with respect to the ‘full’ output.
-    :return: N-D array of same dimensions as image. Size depends on mode parameter.
-    """
-
     # If this happens, it is probably a mistake
     if np.ndim(template) > np.ndim(image) or \
             len([i for i in range(np.ndim(template)) if template.shape[i] > image.shape[i]]) > 0:
@@ -125,11 +104,6 @@ def mask_IOU(original_image, contour1, contour2):
             if cv2.contourArea(cnt) > 1000:
                 image2 = cv2.drawContours(blank.copy(), [cnt], 0, (255), -1)
 
-    #Debug
-    #cv2.imshow("1 ", image1)
-    #cv2.imshow("2 ", image2)
-    #cv2.waitKey(0)
-
     #Calculate and return IOU
     intersection = np.logical_and(image1, image2)
     union = np.logical_or(image1, image2)
@@ -164,30 +138,28 @@ def dice_coef(img, img2):
     if img.shape != img2.shape:
         raise ValueError("Shape mismatch: img and img2 must have to be of the same shape.")
     else:
-
         lenIntersection = 0
-
+        #Iterate through all of the pixels to check for intersection
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
-                #Maybe change this to int casting or just rounding?
                 if (np.array_equal(img[i][j], img2[i][j])):
                     lenIntersection += 1
-
+        #Calculate the dice co-efficient
         lenimg = img.shape[0] * img.shape[1]
         lenimg2 = img2.shape[0] * img2.shape[1]
         value = (2. * lenIntersection / (lenimg + lenimg2))
     return value
 
 
-########## Utility functions ####################
+########## Experiment functions ####################
 #################################################
-def compare_ground_truths(ground_truth_path, raw_image_paths, out_path = './Results/Ground Truths/'):
-    #ground truths: instance 5, 6, 25, 26 using frames 1,2,3,4,5,  6,7,8,9,10 and 31,32,33,34,35
+def compare_ground_truths(ground_truth_path, raw_image_paths,  raw_directories, out_path, few_shot = False):
     #Load in ground truths to array
     ground_truths = []
-    raw_directories = ['Instance_5.0', 'Instance_6.0', 'Instance_25.0', 'Instance_26.0']
     sub_directories = ['./Images/SpecialSilhouettes\\' , './Images/Masks\\' , './Images/GraphCut\\' ]
-    raw_indices = [[5,6,7,8,9], [30,31,32,33,34]]
+    if few_shot:
+        sub_directories = ['./Images/SpecialSilhouettes/FewShot\\', './Images/Masks/FewShot\\', './Images/GraphCut/FewShot\\']
+    raw_indices = [5,6,7,8,9,35,36,37,38,39]
     types = [0,1,2] # corresponds to : ['silhouette', 'mask', 'graphcut']
     error_table = []
     averages_table = []
@@ -202,7 +174,6 @@ def compare_ground_truths(ground_truth_path, raw_image_paths, out_path = './Resu
                 mask =  align_image(image, 30)
                 ground_truths.append(mask)
 
-    type_iters = []
     for type_iter, raw_image_path in enumerate(raw_image_paths):
         #Load in corresponding raw images into another array
         raw_images = []
@@ -211,9 +182,11 @@ def compare_ground_truths(ground_truth_path, raw_image_paths, out_path = './Resu
             if len(files) > 0:
                 for file_iter, file in enumerate(sorted(files, key=numericalSort)):
                     for i, _ in enumerate(raw_directories):
+                        if "FewShot" in subdir and few_shot == False:
+                            continue
                         if(subdir == sub_directories[type_iter] + raw_directories[i]):
                             # load the input image and associated mask from disk and perform initial pre-processing
-                            if file_iter in raw_indices[0] and i == 0 or file_iter in raw_indices[0] and i == 2:
+                            if file_iter in raw_indices:
                                 #Masks arent saved in aligned silhouettes cause they are used to create special silhouettes
                                 if type_iter == 1:
                                     image = cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE)
@@ -221,26 +194,10 @@ def compare_ground_truths(ground_truth_path, raw_image_paths, out_path = './Resu
                                     raw_images.append(mask)
                                 else:
                                     raw_images.append(cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE))
-                                type_iters.append(type_iter)
 
-                            elif file_iter in raw_indices[1] and i == 1 or file_iter in raw_indices[1] and i == 3:
-                                if type_iter == 1:
-                                    image = cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE)
-                                    mask = align_image(image, 30)
-                                    raw_images.append(mask)
-                                else:
-                                    raw_images.append(cv2.imread(os.path.join(subdir, file), cv2.IMREAD_GRAYSCALE))
-                                type_iters.append(type_iter)
-
-        #print("final lens: ", len(ground_truths), len(raw_images))
         error_rates = []
         #Iterate through ground truths and compare them using multiple different measurement metrics
         for i, ground_truth in enumerate(ground_truths):
-            #Debug
-            #cv2.imshow("ground truth ", ground_truth)
-            #cv2.imshow("silhouette ", raw_images[i])
-            #cv2.waitKey(0)
-
             #Need function to draw largest rectangle over white pixels in images then perform IOU
             # Return confidence and the following four metrics: DICE score, Intersection over Union, normalized cross-correlation (minus normalisation), signal to noise compression
             dice = dice_coef(ground_truth, raw_images[i])
@@ -267,13 +224,10 @@ def compare_ground_truths(ground_truth_path, raw_image_paths, out_path = './Resu
             error_rates.append([type_iter, error, m_norm, z_norm, score, dice, iou, cc])
 
         error_rates = np.array(error_rates).astype(float)
-        element_average =[-1]# [type_iters[i]]
-
+        element_average =[-1]
         for i in range(0, len(error_rates[0])):
             if i != 0:
                 element_average.append(sum(error_rates[:, i])/len(error_rates[:, i]))
-        #element_average = [types[type_iter], sum(error_rates[:, 1])/len(error_rates[:, 1]), sum(error_rates[:, 2])/len(error_rates[:, 2]),
-        #                   sum(error_rates[:, 3])/len(error_rates[:, 3]), sum(error_rates[:, 4])/len(error_rates[:, 4])]
         element_average = np.array(element_average).astype(float)
         print(len(element_average))
         error_rates = np.vstack([error_rates, element_average])
@@ -282,7 +236,6 @@ def compare_ground_truths(ground_truth_path, raw_image_paths, out_path = './Resu
             error_table = error_rates
         else:
             error_table = np.vstack([error_table, error_rates])
-
     #Record accuracy results + print + save to a .csv
     os.makedirs(out_path, exist_ok=True)
     np.savetxt( out_path + 'error_margins.csv', error_table, fmt='%f', delimiter=",")

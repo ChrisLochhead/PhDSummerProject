@@ -226,17 +226,12 @@ def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, 
     #Initialise data paths and check sizes
     os.chdir(os.path.abspath(os.path.join(__file__, "../../..")))
     dataset = CustomDataset(labels, images, sourceTransform, targetTransform, FFGEI)
-    print("dataset length: ", len(dataset))
-    #for idx, (data, image) in enumerate(dataset):
-    #    print("trying once")
-    #    print(idx)
-        
     df = pd.read_csv(sizes, sep=',',header=None)
     instance_sizes = df.values
 
     #Split 80% training from the data, this 80% will make up the training and validation datasets
     num_instances = len(instance_sizes)
-    train_instances = int(num_instances * 0.8)
+    train_instances = int(num_instances * 0.7)
     test_instances = num_instances - train_instances
     rng = default_rng()
     test_indices = rng.choice(num_instances-1, size = test_instances, replace=False)
@@ -253,16 +248,9 @@ def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, 
         start_value += int(length)
 
     #Remainder is training indices
-    print("instance sizes: ", instance_sizes)
     for i in range(0, sum(map(sum, instance_sizes))):
         if i not in true_test_indices:
-            print("appending: ", i)
             true_train_indices.append(i)
-
-    #Debug 
-    #print("lengths - all, train, test: ", sum(instance_sizes), len(true_train_indices), len(true_test_indices))#, len(true_valid_indices))
-    #print("test indices", len(true_test_indices))
-    #print("train indices, ", len(true_train_indices))
 
     #Pass the indices through as usual to create the subsets
     print(true_train_indices)
@@ -307,7 +295,6 @@ def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_p
     # K-fold Cross Validation model evaluation, splits train/validation data
     for fold, (train_ids, val_ids) in enumerate(kfold.split(data_loader)):
         fold_results = []
-        print("Fold number: ", fold)
         # Sample elements randomly from a given list of ids, no replacement.
         train_subsampler = torch.utils.data.SubsetRandomSampler(train_ids)
         val_subsampler = torch.utils.data.SubsetRandomSampler(val_ids)
@@ -474,11 +461,6 @@ def evaluate_model(loader, model, debug = False):
         f1_score = 2 * ((precision * recall)/(precision + recall))
     else:
         f1_score = 0
-
-    #Debug
-    #print("chris examples: ", num_chris, " claire examples: ", num_claire)
-    #print("correct predictions: Chris: {}, Claire: {} ".format(num_correct_chris, num_correct_claire))
-    #print("precision: {}, recall: {}".format(precision, recall))
 
     total_confidence = 0
     #Prevent division by 0 confidence score errors when using this function for the live video test, as there will only be 1 class present in the data.

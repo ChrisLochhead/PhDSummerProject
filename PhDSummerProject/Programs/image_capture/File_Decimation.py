@@ -103,13 +103,11 @@ def init_google_drive():
         return service
 
     except HttpError as error:
-        # TODO(developer) - Handle errors from drive API.
         print(f'An error occurred: {error}')
 
 
 def get_files_in_folder(service, folder_id):
     """Print files belonging to a folder.
-
     Args:
     service: Drive API service instance.
     folder_id: ID of the folder to print files from.
@@ -126,13 +124,12 @@ def get_files_in_folder(service, folder_id):
             count = 0
             for child in children.get('items', []):
                 count += 1
-                #print 'File Id: %s' % child['id']
             print("count : ", count)
             page_token = children.get('nextPageToken')
             if not page_token:
                 break
-        except errors.HttpError:#, error:
-            print("error") #'An error occurred: %s' % error
+        except errors.HttpError:
+            print("error")
             break
 
 
@@ -170,7 +167,6 @@ def check_human_traversal(images):
                 max_x = box_coords[0]
 
     #If the difference in bounding boxes is equal to 50% of the frame width
-    print("max and min: ", max_x, min_x, images[0].shape[0])
     if abs(max_x - min_x) > (images[0].shape[0] * 0.5):
         return True
 
@@ -195,7 +191,6 @@ def decimate_and_send(path = './Images/CameraTest'):
         dirs.sort(key=numericalSort)
         if iterator == 0:
             folder_names = dirs
-            print("folders: ", folder_names, type(folder_names))
         images = []
         im_names = []
         if len(files) > 0:
@@ -205,7 +200,6 @@ def decimate_and_send(path = './Images/CameraTest'):
                 #print("file name: ", file)
                 images.append(image)
                 im_names.append(os.path.join(subdir, file))
-            print("len: ", len(images))
             image_names.append(im_names)
             instances.append(images)
 
@@ -213,22 +207,13 @@ def decimate_and_send(path = './Images/CameraTest'):
 
     kwargs = {
         "q": "'{}' in parents".format(master_folder_id),
-        # Specify what you want in the response as a best practice. This string
-        # will only get the files' ids, names, and the ids of any folders that they are in
-        #"fields": "nextPageToken,incompleteSearch,files(id,parents,name)",
-        # Add any other arguments to pass to list()
     }
     request = service.files().list(**kwargs)
     print(request)
     response = request.execute()
-    #print("number of sub folders: ", len(response['files']))
     start_count = len(response['files'])
-    # for r in response['files']:
-    #    print(r)
-    print("start: ", start_count)
 
     for i, ims in enumerate(instances):
-        print("enumerating instance: ", i)
         #Pass images through check human count
         contains_1_human = check_human_count(ims)
         #Pass images through check human traversal
@@ -236,28 +221,18 @@ def decimate_and_send(path = './Images/CameraTest'):
 
         #Send images to google drive
         if contains_1_human and human_traverses_fully:
-            print("instance : ", i, " passes")
             #Send to google drive
             #11kK5Rrxw5Dp3a_vXYowYNhglHjQmLna8 is the folder ID
-
-            #Create a sub folder for each instance
-
             #Going to need to work out a way to account for if the folder already has certain instances
-            print("starting count is ", start_count)
             file_metadata = {
                 'name': 'instance_' + str(float(i + start_count)),
                 'parents': [master_folder_id],
                 'mimeType': 'application/vnd.google-apps.folder'
             }
             folder = service.files().create(body=file_metadata, supportsAllDrives=True).execute()
-            #print(this_will_fail)
 
-            #folder = drive.CreateFile(file_metadata)
-            #folder.Upload()
-
-            folder_id = folder['id']#
-            print("folder ID: ", folder_id)#folder.getId()
-
+            folder_id = folder['id']
+            print("folder ID: ", folder_id)
             for iter, im in enumerate(ims):
                 file_metadata = {'name': image_names[i][iter],
                                  'parents': [folder_id]}
@@ -268,13 +243,10 @@ def decimate_and_send(path = './Images/CameraTest'):
                                                     media_body=media,
                                                     fields='id').execute()
 
-                # Read file and set it as the content of this instance.
-                print("content path: ", path + "/" + image_names[i][iter])
                 #gfile.SetContentFile(image_names[i][iter])
                 #gfile.Upload()  # Upload the file.
 
         else:
-            print("instance : ", i, " fails: ", contains_1_human, human_traverses_fully)
             #delete folder
             delete_folder(folder_names[i])
             

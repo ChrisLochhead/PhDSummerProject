@@ -248,7 +248,6 @@ def get_silhouettes(path, verbose = 0, HOG = False, few_shot = False):
 
     for iterator, (subdir, dirs, files) in enumerate(os.walk(path)):
         dirs.sort(key=numericalSort)
-        print("printing iterator: ", iterator, subdir)
         if len(files) > 0:
             raw_images = []
             processed_instances = []
@@ -264,7 +263,6 @@ def get_silhouettes(path, verbose = 0, HOG = False, few_shot = False):
                 if HOG == False:
                     processed_instances.append(process_image(gray_img, raw_images[file_iter], verbose, subtractor))
                 else:
-                    print("processing folder: ", iterator, ": ", file_iter, ": ", subdir, dir)
                     processed_instances.append(process_HOG_image(get_HOG_image(gray_img), HOG_background, mask_instances[iterator-1][file_iter]))
 
             processed_images.append(processed_instances)
@@ -297,6 +295,5 @@ def get_silhouettes(path, verbose = 0, HOG = False, few_shot = False):
                 if not np.all((image == 0)) and not np.all((image == 255)):
                     cv2.imwrite(local_path + str(i) + ".jpg", image)
     print("all saved")
-#################################################
-#################################################
+
 
