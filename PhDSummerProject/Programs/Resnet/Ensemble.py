@@ -28,7 +28,6 @@ import Utilities
 import skimage.io as sk
 from sklearn.model_selection import train_test_split, KFold
 
-
 #Function to split data into n chunks
 #Number of folds must be divisible by number of instances: 6 instances means i can have 6, 3 or 2 folds.
 def split_data_n_folds(num_folds, sourceTransform, targetTransform, sizes, batch_size, FFGEI, data_path, label_path):
@@ -115,6 +114,7 @@ def split_data_n_folds(num_folds, sourceTransform, targetTransform, sizes, batch
         #Split true indices in half, give half to train and half to test
         num_examples = len(unravelled_fold_indices[iter])
         cut_point = int(num_examples * 0.5)
+        print("heres the instances: ", unravelled_fold_indices[iter])
         fold_train = torch.utils.data.Subset(dataset, unravelled_fold_indices[iter][:cut_point])
         fold_test = torch.utils.data.Subset(dataset, unravelled_fold_indices[iter][cut_point:])
         folded_train_data.append(fold_train)
@@ -138,15 +138,15 @@ def create_ensemble_resnets(num_models, model_path, empty = False):
         if empty == False:
             model = load_model(model_path)
         else:
-            model = LocalResnet.ResNet50(img_channel=1, num_classes=2)
+            model = LocalResnet.ResNet18(img_channel=1, num_classes=2)
         models.append(model)
     return models
 
 def train_ensemble_model(training_data, testing_data, models, epoch, batch_size, results_out, model_out):
     # Results list (empty 2D array apart from titles
-    results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1',
-                'Val_Acc', 'Val_Conf', 'Val_Prec', 'Val_Recall', 'Val_f1',
-                'Test_Acc', 'Test_Conf', 'Test_Prec', 'Test_Recall', 'Test_f1']]
+    results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1', 'T_TP', 'T_FP','T_TN', 'T_FN',
+                'Val_Acc', 'Val_Conf', 'Val_Prec', 'Val_Recall', 'Val_f1', 'V_TP', 'V_FP','V_TN', 'V_FN',
+                'Test_Acc', 'Test_Conf', 'Test_Prec', 'Test_Recall', 'Test_f1', 'TE_TP', 'TE_FP','TE_TN', 'TE_FN']]
     # Hyperparameters
     in_channels = 1
     num_classes = 2
@@ -262,6 +262,7 @@ def evaluate_step(loader, model, debug = False):
 
     # Calculate precision and recall
     true_pos = 0
+    true_neg = 0
     false_pos = 0
     false_neg = 0
     prediction_array = []
@@ -284,6 +285,7 @@ def evaluate_step(loader, model, debug = False):
                     if i ==0:
                         num_correct_chris+=1
                         chris_confidence += k[0].item()
+                        true_neg += 1
                     else:
                         num_correct_claire+=1
                         claire_confidence += k[1].item()
@@ -314,7 +316,7 @@ def evaluate_step(loader, model, debug = False):
     if num_chris > 0:
         total_chris_confidence = chris_confidence/num_chris * 100
 
-    print("TP FP FN", true_pos, false_pos, false_neg)
+    print("TP FP TN FN", true_pos, false_pos, true_neg, false_neg)
     #Prevent division by 0 errors when calculating precision and recall
     if true_pos > 0 or false_pos > 0:
         precision = true_pos / (true_pos + false_pos)
@@ -346,7 +348,7 @@ def evaluate_step(loader, model, debug = False):
 
     #If debug, return the prediction array as this is the live video test.
     if debug == False:
-        return [total_accuracy, total_confidence, precision, recall, f1_score]
+        return [total_accuracy, total_confidence, precision, recall, f1_score, true_pos, false_pos, true_neg, false_neg]
     else:
         return [prediction_array, total_accuracy, total_confidence, precision, recall, f1_score]
 
@@ -369,6 +371,7 @@ def evaluate_ensemble(models, testing_data, modelpath = 'None'):
 
         # Calculate precision and recall
         true_pos = 0
+        true_neg = 0
         false_pos = 0
         false_neg = 0
         prediction_array = []
@@ -393,6 +396,7 @@ def evaluate_ensemble(models, testing_data, modelpath = 'None'):
                         if i == 0:
                             num_correct_chris += 1
                             chris_confidence += k[0].item()
+                            true_neg += 1
                         else:
                             num_correct_claire += 1
                             claire_confidence += k[1].item()
@@ -490,7 +494,7 @@ def evaluate_ensemble(models, testing_data, modelpath = 'None'):
     total_confidence = sum(voting_confidences) / len(voting_confidences)
     total_accuracy = num_correct / num_samples * 100
 
-    return [total_accuracy, total_confidence, precision, recall, f1_score]
+    return [total_accuracy, total_confidence, precision, recall, f1_score, true_pos, false_pos, true_neg, false_neg]
 
 #Function to save resnets
 def save_ensembles(model, model_path, ensemble_count, fold_count):
@@ -501,7 +505,7 @@ def save_ensembles(model, model_path, ensemble_count, fold_count):
 
 #Function to load resnets
 def load_model(model_path):
-    model = LocalResnet.ResNet50(img_channel=1, num_classes=2)
+    model = LocalResnet.ResNet18(img_channel=1, num_classes=2)
     model.load_state_dict(torch.load(model_path))
     model.eval()
     return model
@@ -515,28 +519,31 @@ def save_metrics(array, frame, results_out):
     frame.to_csv(results_out + "results.csv")
 
 #Main function
+#FFGEI - ALL
+#GEI - Graphcut
+#HOGFFGEI - ALL
 def few_shot_ensemble_experiment(n, batch_size, epoch):
-    batch_size = 100
-    epoch = 2
+    batch_size = 3
+    epoch = 10
     target = Lambda( lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
-    ensemble_models =  create_ensemble_resnets(n, model_path='./Models/FFGEI_SpecialSilhouettes/model_fold_2.pth') # <- CHANGE EVERY MODEL!!
+    ensemble_models =  create_ensemble_resnets(n, model_path='./Models/GEI_SpecialSilhouettes/model_fold_2.pth') # <- CHANGE EVERY MODEL!!
 
     #Split the few shot data
     #1 fold for each of the ensemble models to train individually
     few_shot_training, few_shot_testing = split_data_n_folds(num_folds=n,
                                                             sourceTransform=ToTensor(),
                                                             targetTransform=target,
-                                                            sizes='./Instance_Counts/FewShot/Normal/indices.csv', # <- change this between GEI or FFGEI/HOGFFGEI and graphcut
+                                                            sizes='./Instance_Counts/FewShot/Normal/GEI.csv', # <- change this between GEI or FFGEI/HOGFFGEI and graphcut
                                                             batch_size=batch_size,
                                                             FFGEI=False,
-                                                            data_path='./Images/FFGEI/FewShot/Unravelled/SpecialSilhouettes', # <- Change this per experiment
-                                                            label_path='./labels/FewShot/FFGEI_labels.csv') # <- Change this for Graphcuts
+                                                            data_path='./Images/GEI/FewShot/SpecialSilhouettes', # <- Change this per experiment
+                                                            label_path='./labels/FewShot/labels.csv') # <- Change this for Graphcuts
 
     #Currently training is done in the creation, split into the train, single model
     ensemble_models = train_ensemble_model(training_data = few_shot_training, testing_data = few_shot_testing, models = ensemble_models,
                                            epoch = epoch, batch_size = 1,
-                                           results_out ='./Results/Ensemble/FFGEI_SpecialSilhouettes/', # <- Change this per experiment
-                                           model_out = './Models/Ensemble/FFGEI_SpecialSilhouettes/' ) # <- Change this per experiment
+                                           results_out ='./Results/Ensemble/GEI_SpecialSilhouettes/', # <- Change this per experiment
+                                           model_out = './Models/Ensemble/GEI_SpecialSilhouettes/' ) # <- Change this per experiment
         
     #Evaluate ensemble resnets and conduct voting for classification
     evaluation_results = evaluate_ensemble(ensemble_models, few_shot_testing[0])
@@ -545,12 +552,9 @@ def few_shot_ensemble_experiment(n, batch_size, epoch):
     #Evaluate standard models with no pre-trained weights as a control group
     control_results = evaluate_ensemble(empty_models, few_shot_testing[0])
 
-    #Save the control and evaluation results (together maybe?) after that clean the code and we are all done :)
-    #combined_results = np.concatenate((control_results, evaluation_results, axis=0)
     control_frame = pd.DataFrame([control_results])
     eval_frame = pd.DataFrame([evaluation_results])
-
     #Control only needs to be recorded once per GEI method (GEI, HOGFFGEI, FFGEI)
     #save_metrics(control_results, control_frame, results_out = './Results/Few_Shot/Control/GEI/') # <- Change this per between GEI, FFGEI and HOGFFGEI
 
-    save_metrics(evaluation_results, eval_frame, results_out = './Results/Few_Shot/Normal/FFGEI/SpecialSilhouettes/') # <- Change this per experiment
+    save_metrics(evaluation_results, eval_frame, results_out = './Results/Few_Shot/Normal/GEI/SpecialSilhouettes/') # <- Change this per experiment

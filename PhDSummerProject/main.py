@@ -9,7 +9,7 @@ import matplotlib.pyplot as MPL
 import init_directories
 import capture
 import ImageProcessor
-from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths
+from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths, extract_ttest_metrics
 import GEI
 import LocalResnet
 import Experiment_Functions
@@ -19,6 +19,9 @@ import Ensemble
 #Torch
 import torch
 from torchvision.transforms import ToTensor, Lambda
+
+#Scipy for T-test
+from scipy import stats
 
 #MaskCNN only works on the PC version of this app, the Jetson Nano doesn't support python 3.7
 if sys.version_info[:3] > (3, 7, 0):
@@ -135,7 +138,7 @@ def on_press(key):
                                                                         batch_size = batch_size,
                                                                         FFGEI = False)
                 print("datasets prepared sucessfully")
-                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/HOGFFGEI/SpecialSilhouettes/Test/', model_path = './Models/HOGFFGEI_SpecialSilhouettes/Test/')
+                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/HOGFFGEI/SpecialSilhouettes/', model_path = './Models/HOGFFGEI_SpecialSilhouettes/')
                 main()
                 #Experiments:, do once with normal then once with few-shot 
                 
@@ -228,8 +231,6 @@ def on_press(key):
                 main()
                 print("ground truth comparison completed.")
             elif current_menu == 3:
-                #GEI experiments:
-                #SpecialSilhouette
                 Ensemble.few_shot_ensemble_experiment(3, batch_size = 3, epoch = 15)
                 main()
         if key.char == '8':
@@ -237,6 +238,20 @@ def on_press(key):
                 extended_menu(1, page_1)
             elif current_menu == 1:
                 extended_menu(3, page_3)
+            elif current_menu == 3:
+                #Get results for every test and produce t-values
+                confusion_matrices = []
+                #FF-GEI - HOG-FF-GEI special sils
+                confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/FFGEI_SpecialSilhouettes/results.csv', './Results/Ensemble/HOGFFGEI_SpecialSilhouettes/results.csv'))
+                #FF-GEI - HOG-FF-GEI masks
+                confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/FFGEI_Masks/results.csv', './Results/Ensemble/HOGFFGEI_Masks/results.csv'))
+                #GEI - FF-GEI graphcut
+                confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/GEI_GraphCut/results.csv', './Results/Ensemble/FFGEI_GraphCut/results.csv'))
+
+                print("Test results: ")
+                for matrix in confusion_matrices:
+                    print(matrix)
+
         if key.char == '9':
             if current_menu == 1:
                 main()
@@ -304,7 +319,9 @@ page_3 = """Select on of the following options:
 4. Create HOGFFGEIs
 5. Unravel FFGEIs
 6. menu debug
-7. few-shot ensemble learning"""
+7. few-shot ensemble learning
+8. Calculate t-values
+"""
 
 def main(error_message = None, init = False):
     global current_menu

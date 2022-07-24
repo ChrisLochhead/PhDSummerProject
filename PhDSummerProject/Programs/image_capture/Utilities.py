@@ -5,6 +5,7 @@ from PIL import Image, ImageOps
 import numpy as np
 import os
 import sys
+import copy
 import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -30,6 +31,40 @@ matplotlib.use('TkAgg')
 
 ########## Utility functions ####################
 #################################################
+def extract_ttest_metrics(first_path, second_path):
+    #Extract data
+    sets = []
+    sets.append(pd.read_csv(first_path))
+    sets.append(pd.read_csv(second_path))
+
+    #Get last 4 into new array
+    pruned_sets = []
+    for set in sets:
+        listed = set.values.tolist()
+        #Extract test results
+        pruned = listed.iloc[:, :-4]
+        #Going to need to remove means and STD prior
+        #Remove titles
+        for value in enumerate(pruned[:]):
+            pruned.remove(value)
+            break
+        pruned_sets.append(copy.deepcopy(pruned))
+
+    #Translate into 4 separate 1 column arrays
+    matrices = []
+    for iterator, set in enumerate(pruned_sets[0]):
+        #Calculate TTest on all 4
+        matrices.append(stats.ttest_ind(set, pruned_sets[1][iterator]))
+
+    #Reshape into matrix
+    #0, 1, 3, 2
+    reshaped = [[matrices[0], matrices[1]], [matrices[3], matrices[2]]]
+
+    #Print and return
+    print("Confusion matrix of t-values:")
+    print(reshaped)
+    return reshaped
+
 def process_input_video(instance_path, mask_path, model_path = './Models/FFGEI_Special/model_fold_2.pth', silhouette_type='Special', label_class = 1):
     #Get raw images
     input_frames = []

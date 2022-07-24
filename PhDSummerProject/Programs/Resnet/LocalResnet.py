@@ -21,6 +21,7 @@ from PIL import ImageTk, Image
 import os
 import numpy as np
 import cv2
+import random
 
 #Local files
 import Utilities #from Utilities import numericalSort
@@ -234,9 +235,12 @@ def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, 
     train_instances = int(num_instances * 0.7)
     test_instances = num_instances - train_instances
     rng = default_rng()
-    test_indices = rng.choice(num_instances-1, size = test_instances, replace=False)
+    #Cut both classes evenly so both the train and test sets have a roughly equal distribution of examples
+    class_0_indices = random.sample(range(0, int(num_instances/2)-1), int(test_instances/2))
+    class_1_indices = random.sample(range(int(num_instances/2), num_instances), int(test_instances/2))
+    test_indices = np.concatenate([class_0_indices, class_1_indices], axis=0)
 
-    #Transform these indices from indices 1-42 (number of instances) to 0-4099 (number of total frames among all instances)
+    #Transform these indices from indices 0-39 (number of instances) to 0-4099 (number of total frames among all instances)
     true_train_indices = []
     true_test_indices = []
     #Test indices
@@ -258,11 +262,11 @@ def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, 
     train_data = torch.utils.data.Subset(dataset, true_train_indices)
     test_data = torch.utils.data.Subset(dataset, true_test_indices)
     print(type(true_train_indices), len(true_train_indices), "length here??", len(dataset))
-    for idx, (data, image) in enumerate(train_data):
-        print("trying once")
-        print(idx)
+    #for idx, (data, image) in enumerate(train_data):
+    #    print("trying once")
+    #    print(idx)
 
-    #Create dataloaders for training/validation set and test set.
+    ##Create dataloaders for training/validation set and test set.
     train_val_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test_data, batch_size=batch_size, shuffle=True)
     return train_data, test_loader
@@ -270,9 +274,9 @@ def create_dataloaders(sourceTransform, targetTransform, labels, images, sizes, 
 def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_path):
 
     #Results list (empty 2D array apart from titles
-    results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1',
-                'Val_Acc', 'Val_Conf', 'Val_Prec', 'Val_Recall', 'Val_f1',
-                'Test_Acc', 'Test_Conf', 'Test_Prec', 'Test_Recall', 'Test_f1']]
+    results = [['Epoch', 'Train_Acc', 'Train_Conf', 'Train_Prec', 'Train_Recall', 'Train_f1', 'T_TP', 'T_FP','T_TN', 'T_FN',
+                'Val_Acc', 'Val_Conf', 'Val_Prec', 'Val_Recall', 'Val_f1', 'V_TP', 'V_FP','V_TN', 'V_FN',
+                'Test_Acc', 'Test_Conf', 'Test_Prec', 'Test_Recall', 'Test_f1', 'TE_TP', 'TE_FP','TE_TN', 'TE_FN']]
     # Hyperparameters
     in_channels = 1
     num_classes = 2
@@ -280,7 +284,7 @@ def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_p
     num_epochs = epoch
 
     # Initialize network
-    model = ResNet50(img_channel=1, num_classes=num_classes)
+    model = ResNet18(img_channel=1, num_classes=num_classes)
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -309,7 +313,7 @@ def train_network(data_loader, test_loader, epoch, batch_size, out_path, model_p
 
         print("----------------------------------------------------------------type: ", type(trainloader))
         # Init the neural network
-        network = ResNet50(img_channel=1, num_classes=num_classes)
+        network = ResNet18(img_channel=1, num_classes=num_classes)
         network.apply(reset_weights)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -391,11 +395,12 @@ def evaluate_model(loader, model, debug = False):
     true_pos = 0
     false_pos = 0
     false_neg = 0
+    true_neg = 0
     prediction_array = []
 
     with torch.no_grad():
         for x, y in loader:
-            print("what im working with: ", x, y )
+            #print("what im working with: ", x, y )
             x = x.to(device=my_device)
             y = y.to(device=my_device)
             scores = model(x)
@@ -412,6 +417,7 @@ def evaluate_model(loader, model, debug = False):
                     if i ==0:
                         num_correct_chris+=1
                         chris_confidence += k[0].item()
+                        true_neg += 1
                     else:
                         num_correct_claire+=1
                         claire_confidence += k[1].item()
@@ -466,20 +472,21 @@ def evaluate_model(loader, model, debug = False):
     #Prevent division by 0 confidence score errors when using this function for the live video test, as there will only be 1 class present in the data.
     if num_claire > 0 and num_chris > 0:
         total_confidence = ((claire_confidence / num_claire) + (chris_confidence / num_chris)) * 100 / 2
-        print("total prediction confidence: {:.2f}%".format(((claire_confidence/num_claire) + (chris_confidence/num_chris)) * 100 / 2))
+        #print("total prediction confidence: {:.2f}%".format(((claire_confidence/num_claire) + (chris_confidence/num_chris)) * 100 / 2))
     elif num_claire > 0:
-        print("this confidence", claire_confidence, num_claire)
+        #print("this confidence", claire_confidence, num_claire)
         total_confidence = (claire_confidence / num_claire) * 100 / 2
     elif num_chris > 0:
-        print("that confidence", chris_confidence, num_chris)
+        #print("that confidence", chris_confidence, num_chris)
         total_confidence = (chris_confidence / num_chris) * 100 / 2
 
     print("accuracy: {:.2f}".format(num_correct/num_samples * 100))
+    print("TP, FP, TN, FN: ", true_pos, false_pos, true_neg, false_neg)
     total_accuracy = num_correct/num_samples * 100
 
     #If debug, return the prediction array as this is the live video test.
     if debug == False:
-        return [total_accuracy, total_confidence, precision, recall, f1_score]
+        return [total_accuracy, total_confidence, precision, recall, f1_score, true_pos, false_pos, true_neg, false_neg]
     else:
         return [prediction_array, total_accuracy, total_confidence, precision, recall, f1_score]
 
