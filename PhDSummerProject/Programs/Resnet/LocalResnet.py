@@ -17,7 +17,8 @@ import pandas as pd
 import copy
 from numpy.random import default_rng
 import matplotlib.pyplot as plt
-from PIL import ImageTk, Image
+from PIL import ImageTk, Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 import os
 import numpy as np
 import cv2

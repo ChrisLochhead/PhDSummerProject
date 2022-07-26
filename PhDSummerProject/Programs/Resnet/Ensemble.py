@@ -12,7 +12,8 @@ import torchvision.transforms as transforms
 from torchvision.transforms import ToTensor, Lambda
 
 #Standard imports
-from tqdm import tqdm  
+from tqdm import tqdm
+import random
 import pandas as pd
 import copy
 from numpy.random import default_rng
@@ -114,9 +115,16 @@ def split_data_n_folds(num_folds, sourceTransform, targetTransform, sizes, batch
         #Split true indices in half, give half to train and half to test
         num_examples = len(unravelled_fold_indices[iter])
         cut_point = int(num_examples * 0.5)
-        print("heres the instances: ", unravelled_fold_indices[iter])
-        fold_train = torch.utils.data.Subset(dataset, unravelled_fold_indices[iter][:cut_point])
-        fold_test = torch.utils.data.Subset(dataset, unravelled_fold_indices[iter][cut_point:])
+        unravelled_fold_indices[iter] = sorted(unravelled_fold_indices[iter])
+
+        class_0_indices = random.sample(range(0, int(num_examples / 2) - 1), int(num_examples / 4))
+        class_1_indices = random.sample(range(int(num_examples / 2), num_examples), int(num_examples / 4))
+        train_indices = np.concatenate([class_0_indices, class_1_indices], axis=0)
+        test_indices = [value for value in range(0, int(num_examples)) if value not in train_indices]
+
+        #print("train indices: ", train_indices)
+        fold_train = torch.utils.data.Subset(dataset, train_indices)#unravelled_fold_indices[iter][:cut_point])
+        fold_test = torch.utils.data.Subset(dataset, test_indices)#unravelled_fold_indices[iter][cut_point:])
         folded_train_data.append(fold_train)
         folded_test_data.append(fold_test)
 
@@ -523,27 +531,27 @@ def save_metrics(array, frame, results_out):
 #GEI - Graphcut
 #HOGFFGEI - ALL
 def few_shot_ensemble_experiment(n, batch_size, epoch):
-    batch_size = 3
-    epoch = 10
+    batch_size = 50
+    epoch = 5
     target = Lambda( lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
-    ensemble_models =  create_ensemble_resnets(n, model_path='./Models/GEI_SpecialSilhouettes/model_fold_2.pth') # <- CHANGE EVERY MODEL!!
+    ensemble_models =  create_ensemble_resnets(n, model_path='./Models/HOGFFGEI_Masks/model_fold_2.pth') # <- CHANGE EVERY MODEL!!
 
     #Split the few shot data
     #1 fold for each of the ensemble models to train individually
     few_shot_training, few_shot_testing = split_data_n_folds(num_folds=n,
                                                             sourceTransform=ToTensor(),
                                                             targetTransform=target,
-                                                            sizes='./Instance_Counts/FewShot/Normal/GEI.csv', # <- change this between GEI or FFGEI/HOGFFGEI and graphcut
+                                                            sizes='./Instance_Counts/FewShot/Normal/indices.csv', # <- change this between GEI or FFGEI/HOGFFGEI and graphcut
                                                             batch_size=batch_size,
                                                             FFGEI=False,
-                                                            data_path='./Images/GEI/FewShot/SpecialSilhouettes', # <- Change this per experiment
-                                                            label_path='./labels/FewShot/labels.csv') # <- Change this for Graphcuts
+                                                            data_path='./Images/HOGFFGEI/FewShot/Masks', # <- Change this per experiment
+                                                            label_path='./labels/FewShot/FFGEI_labels.csv') # <- Change this for Graphcuts
 
     #Currently training is done in the creation, split into the train, single model
     ensemble_models = train_ensemble_model(training_data = few_shot_training, testing_data = few_shot_testing, models = ensemble_models,
                                            epoch = epoch, batch_size = 1,
-                                           results_out ='./Results/Ensemble/GEI_SpecialSilhouettes/', # <- Change this per experiment
-                                           model_out = './Models/Ensemble/GEI_SpecialSilhouettes/' ) # <- Change this per experiment
+                                           results_out ='./Results/Ensemble/HOGFFGEI_Masks/', # <- Change this per experiment
+                                           model_out = './Models/Ensemble/HOGFFGEI_Masks/' ) # <- Change this per experiment
         
     #Evaluate ensemble resnets and conduct voting for classification
     evaluation_results = evaluate_ensemble(ensemble_models, few_shot_testing[0])
@@ -555,6 +563,6 @@ def few_shot_ensemble_experiment(n, batch_size, epoch):
     control_frame = pd.DataFrame([control_results])
     eval_frame = pd.DataFrame([evaluation_results])
     #Control only needs to be recorded once per GEI method (GEI, HOGFFGEI, FFGEI)
-    #save_metrics(control_results, control_frame, results_out = './Results/Few_Shot/Control/GEI/') # <- Change this per between GEI, FFGEI and HOGFFGEI
+    save_metrics(control_results, control_frame, results_out = './Results/Few_Shot/Control/HOGFFGEI/') # <- Change this per between GEI, FFGEI and HOGFFGEI
 
-    save_metrics(evaluation_results, eval_frame, results_out = './Results/Few_Shot/Normal/GEI/SpecialSilhouettes/') # <- Change this per experiment
+    save_metrics(evaluation_results, eval_frame, results_out = './Results/Few_Shot/Normal/HOGFFGEI/Masks/') # <- Change this per experiment

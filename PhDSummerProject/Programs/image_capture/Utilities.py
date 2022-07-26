@@ -10,6 +10,7 @@ import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib
+from scipy import stats
 
 #Local files
 import JetsonYolo
@@ -17,11 +18,14 @@ import ImageProcessor
 import GEI
 import torch
 import LocalResnet
+import Ensemble
 
 #Torch and SKlearn
 from torchvision.transforms import ToTensor, Lambda
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+
+from statsmodels.stats.contingency_tables import mcnemar
 
 #Only works on the PC version of this app, Jetson doesn't support python 3.7
 if sys.version_info[:3] > (3, 7, 0):
@@ -31,7 +35,94 @@ matplotlib.use('TkAgg')
 
 ########## Utility functions ####################
 #################################################
-def extract_ttest_metrics(first_path, second_path):
+
+def compare_evaluation(models, testing_data):
+    model_predictions = []
+    for model in models:
+        # Calculate precision and recall
+        prediction_array = []
+        truths = []
+
+        with torch.no_grad():
+            for x, y in testing_data:
+                x = x.to(device=LocalResnet.my_device)
+                y = y.to(device=LocalResnet.my_device)
+                truths.append(y.item())
+                scores = model(x)
+
+                # Get prediction probabilities
+                probs = torch.nn.functional.softmax(scores, dim=1)
+                top_p, top_class = probs.topk(1, dim=1)
+                _, predictions = scores.max(1)
+                # Iterate through results to get correct or wrong
+                zipped = zip(y, predictions)
+                for i, j in zipped:
+                    if i == j:
+                        prediction_array.append(1)
+                    else:
+                        prediction_array.append(0)
+
+
+        model_predictions.append(prediction_array)
+    print("contingency table: ", len(model_predictions[0]), len(model_predictions[1]))
+
+    contingency_table = [[0,0],[0,0]]
+    #Sort into contingency table from raw data
+    for x, y in zip(model_predictions[0], model_predictions[1]):
+        if x == y and x == 1:
+            contingency_table[0][0] += 1
+        elif x == y and x == 0:
+            contingency_table[1][1] += 1
+        elif x != y and x == 1:
+            contingency_table[1][0] += 1
+        elif x !=y and x == 0:
+            contingency_table[0][1] += 1
+
+    print("contingency table: ")
+    print(contingency_table)
+    return contingency_table
+
+def create_contingency_table(classifier1, classifier2):
+    #Models for testing
+    model1 = Ensemble.load_model(classifier1)
+    model2 = Ensemble.load_model(classifier2)
+
+    #Testing data
+    batch_size = 50
+    epoch = 5
+    target = Lambda( lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
+    training, testing = Ensemble.split_data_n_folds(num_folds=3,
+                                             sourceTransform=ToTensor(),
+                                             targetTransform=target,
+                                             sizes='./Instance_Counts/FewShot/Normal/indices.csv',
+                                             # <- change this between GEI or FFGEI/HOGFFGEI and graphcut
+                                             batch_size=batch_size,
+                                             FFGEI=False,
+                                             data_path='./Images/FFGEI/FewShot/Unravelled/Masks',
+                                             # <- Change this per experiment
+                                             label_path='./labels/FewShot/FFGEI_labels.csv')  # <- Change this for Graphcuts
+
+    contingency_table = compare_evaluation([model1, model2], testing[0])
+    print("contingency table::: ", contingency_table)
+    statistics = mcnemars_statistic(contingency_table)
+    return statistics
+
+def mcnemars_statistic(table):
+    # calculate mcnemar test
+    result = mcnemar(table, exact=True)
+    # summarize the finding
+    print('statistic=%.3f, p-value=%.3f' % (result.statistic, result.pvalue))
+    # interpret the p-value
+    alpha = 0.05
+    if result.pvalue > alpha:
+        print('Same proportions of errors (fail to reject H0)')
+    else:
+        print('Different proportions of errors (reject H0)')
+
+    return [result.statistic, result.pvalue]
+
+
+def extract_ttest_metrics(first_path, second_path, result_out):
     #Extract data
     sets = []
     sets.append(pd.read_csv(first_path))
@@ -41,19 +132,58 @@ def extract_ttest_metrics(first_path, second_path):
     pruned_sets = []
     for set in sets:
         listed = set.values.tolist()
+        print("listed shape: ", len(listed), len(listed[0]))
+
+
+        matrix_values = []
+        for i, column in enumerate(zip(*listed)):
+            print ("len: ", len(listed[0]))
+            if i > len(listed[0]) - 5:
+                print("in here: ", i)
+                matrix_values.append(list(column))
+
+        print("matrix values:")
+        print(matrix_values)
         #Extract test results
-        pruned = listed.iloc[:, :-4]
+        #listed = pruned.values.tolist()
+
         #Going to need to remove means and STD prior
         #Remove titles
-        for value in enumerate(pruned[:]):
-            pruned.remove(value)
+        for i, column in enumerate(zip(*matrix_values)):
+            print("value: ", column)
+            for c in column:
+                print("c is: ", c)
+                for j, row in enumerate(matrix_values):
+                    if c in row:
+                        print("i found it", matrix_values[j], type(matrix_values[j]))
+                        matrix_values[j].remove(c)
+                    else:
+                        print ("i cant find it")
             break
-        pruned_sets.append(copy.deepcopy(pruned))
+
+        print("pruned without column titles: ")
+        print(matrix_values)
+
+        pruned_sets.append(copy.deepcopy(matrix_values))
 
     #Translate into 4 separate 1 column arrays
     matrices = []
+    print(type(pruned_sets), "is pruned set type")
+    for i, set in enumerate(pruned_sets):
+        for j, row in enumerate(set):
+            for k, value in enumerate(row):
+                pruned_sets[i][j][k] = float(pruned_sets[i][j][k])
+
+
     for iterator, set in enumerate(pruned_sets[0]):
         #Calculate TTest on all 4
+        #make contingency table of set and pruned_sets[1][iterator]
+        print("set looks like: ")
+        print(set)
+        print("pruned looks like: ")
+        print(pruned_sets[1][iterator])
+        print(end)
+        matrices.append(mcnemars_statistic(contingency_table))
         matrices.append(stats.ttest_ind(set, pruned_sets[1][iterator]))
 
     #Reshape into matrix
@@ -63,7 +193,12 @@ def extract_ttest_metrics(first_path, second_path):
     #Print and return
     print("Confusion matrix of t-values:")
     print(reshaped)
-    return reshaped
+
+    frame = pd.DataFrame([reshaped])
+    print(frame.head())
+    # Save as CSV all results
+    os.makedirs('./Results/T_tests/', exist_ok=True)
+    frame.to_csv('./Results/T_tests/' + result_out +  "_results.csv")
 
 def process_input_video(instance_path, mask_path, model_path = './Models/FFGEI_Special/model_fold_2.pth', silhouette_type='Special', label_class = 1):
     #Get raw images

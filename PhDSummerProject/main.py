@@ -9,7 +9,7 @@ import matplotlib.pyplot as MPL
 import init_directories
 import capture
 import ImageProcessor
-from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths, extract_ttest_metrics
+from Utilities import remove_block_images, remove_background_images, generate_labels, unravel_FFGEI, create_HOGFFGEI, generate_instance_lengths, extract_ttest_metrics, create_contingency_table
 import GEI
 import LocalResnet
 import Experiment_Functions
@@ -127,18 +127,18 @@ def on_press(key):
                 GEI.create_FF_GEI('./Images/Masks/FewShot', './Images/FFGEI/Masks/FewShot/', mask = True)
                 #main()
             elif current_menu == 1:
-                batch_size = 50
-                epoch = 3
+                batch_size = 3
+                epoch = 10
                 target = Lambda(lambda y: torch.zeros(2, dtype=torch.float).scatter_(dim=0, index=torch.tensor(y), value=1))
                 train_val_loader, test_loader= LocalResnet.create_dataloaders(sourceTransform=ToTensor(),
                                                                         targetTransform = target,
-                                                                        labels = './labels/FFGEI_labels.csv',
-                                                                        images = './Images/HOGFFGEI/SpecialSilhouettes',
-                                                                        sizes = './Instance_Counts/Normal/indices.csv',
+                                                                        labels = './labels/labels.csv',
+                                                                        images = './Images/GEI/GraphCut',
+                                                                        sizes = './Instance_Counts/Normal/GEI.csv',
                                                                         batch_size = batch_size,
                                                                         FFGEI = False)
                 print("datasets prepared sucessfully")
-                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/HOGFFGEI/SpecialSilhouettes/', model_path = './Models/HOGFFGEI_SpecialSilhouettes/')
+                model = LocalResnet.train_network(train_val_loader, test_loader, epoch = epoch, batch_size = batch_size, out_path = './Results/GEI/GraphCut/', model_path = './Models/GEI_GraphCut/')
                 main()
                 #Experiments:, do once with normal then once with few-shot 
                 
@@ -239,14 +239,19 @@ def on_press(key):
             elif current_menu == 1:
                 extended_menu(3, page_3)
             elif current_menu == 3:
+                #Get T-values using Mcnemars t-test
+                create_contingency_table('./Models/GEI_Masks/model_fold_2.pth', './Models/GEI_SpecialSilhouettes/model_fold_2.pth')
+                create_contingency_table('./Models/HOGFFGEI_Masks/model_fold_2.pth', './Models/HOGFFGEI_SpecialSilhouettes/model_fold_2.pth')
+                create_contingency_table('./Models/FFGEI_SpecialSilhouettes/model_fold_2.pth', './Models/FFGEI_Masks/model_fold_2.pth')
+
                 #Get results for every test and produce t-values
-                confusion_matrices = []
+                #confusion_matrices = []
                 #FF-GEI - HOG-FF-GEI special sils
-                confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/FFGEI_SpecialSilhouettes/results.csv', './Results/Ensemble/HOGFFGEI_SpecialSilhouettes/results.csv'))
+                #confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/FFGEI_SpecialSilhouettes/results.csv', './Results/Ensemble/FFGEI_Masks/results.csv', result_out="Special"))
                 #FF-GEI - HOG-FF-GEI masks
-                confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/FFGEI_Masks/results.csv', './Results/Ensemble/HOGFFGEI_Masks/results.csv'))
+                #confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/HOGFFGEI_SpecialSilhouettes/results.csv', './Results/Ensemble/HOGFFGEI_Masks/results.csv', result_out="mask"))
                 #GEI - FF-GEI graphcut
-                confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/GEI_GraphCut/results.csv', './Results/Ensemble/FFGEI_GraphCut/results.csv'))
+                #confusion_matrices.append(extract_ttest_metrics('./Results/Ensemble/GEI_GraphCut/results.csv', './Results/Ensemble/FFGEI_GraphCut/results.csv', result_out="graph"))
 
                 print("Test results: ")
                 for matrix in confusion_matrices:
