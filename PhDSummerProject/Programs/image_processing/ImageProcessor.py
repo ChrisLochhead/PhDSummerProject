@@ -55,6 +55,7 @@ def create_special_silhouettes(mask_path = './Images/Masks/FewShot', image_path 
                 image = cv2.imread(os.path.join(subdir, file))
                 hist_image = run_histogram_equalization(image)
                 blurred = cv2.GaussianBlur(hist_image, (3, 3), 0)
+                cv2.imshow("Stage 1", blurred)
 
                 #Prepare the image using a sobel edge detector, remove noise and convert to an 8-bit array
                 edgeImg = np.max(np.array([edge_detect(blurred[:, :, 0]), edge_detect(blurred[:, :, 1]), edge_detect(blurred[:, :, 2])]), axis=0)
@@ -68,10 +69,12 @@ def create_special_silhouettes(mask_path = './Images/Masks/FewShot', image_path 
 
                 #Use morphological operations to produce an inflated silhouette from background subtraction
                 background_based_silhouette = cv2.absdiff(edgeImg_8u, background)
+                cv2.imshow("Stage 2", background_based_silhouette)
+
                 background_based_silhouette = cv2.threshold(background_based_silhouette, 100, 255, cv2.THRESH_BINARY)[1]
                 *_, bk_mask = cv2.threshold(background_based_silhouette, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
                 opening = cv2.morphologyEx(bk_mask, cv2.MORPH_OPEN, kernel, iterations=1)
-
+                cv2.imshow("Stage 3", opening)
                 # Retrieve and dilate the mask to prevent parts of the body being excluded
                 if single == False:
                     mask = mask_instances[iterator - 1][file_iter]
@@ -79,8 +82,9 @@ def create_special_silhouettes(mask_path = './Images/Masks/FewShot', image_path 
                     mask = mask_instances[file_iter]
 
                 bk_expanded = cv2.dilate(mask, kernel, iterations=5)
+                cv2.imshow("Stage 4", bk_expanded)
                 bk_mask_test = cv2.bitwise_and(opening, opening, mask=bk_expanded)
-
+                cv2.imshow("Stage 5", bk_mask_test)
                 #Perform morphological operations on edge detected image after applying mask
                 #Thresholding to produce a silhouette of the extremities of the silhouette that the mask may have missed
                 edge_based_silhouette = edgeImg_8u * bk_expanded
@@ -117,8 +121,11 @@ def create_special_silhouettes(mask_path = './Images/Masks/FewShot', image_path 
 
                 #Combine the masks, apply a mode filter to smooth the result
                 combined_example = cv2.addWeighted(bk_mask_test, alpha, combined_example, beta, 0.0)
+                cv2.imshow("Stage 5", combined_example)
                 image_example =  Image.fromarray(combined_example)
                 image_example = image_example.filter(ImageFilter.ModeFilter(size=5))
+                cv2.imshow("Stage 6", np.asarray(image_example))
+                key = cv2.waitKey(0) & 0xff
                 silhouettes.append(np.array(image_example))
             special_silhouettes.append(silhouettes)
             print("silhouette complete")
